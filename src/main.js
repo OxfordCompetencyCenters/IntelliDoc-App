@@ -214,10 +214,25 @@ function runMigrations(pythonCmd, backendDir, envVars) {
 }
 
 /**
- * Locate a working Python executable.
+ * Locate a working Python 3.10+ executable.
+ * macOS GUI apps get a minimal PATH, so we also check common install locations.
  * Returns the command string or throws if none found.
  */
 function findPython() {
+  // Common Python paths on macOS / Linux / Windows
+  const extraPaths = [
+    '/opt/anaconda3/bin',
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/opt/miniconda3/bin',
+    path.join(process.env.HOME || '', 'anaconda3', 'bin'),
+    path.join(process.env.HOME || '', 'miniconda3', 'bin'),
+    path.join(process.env.HOME || '', '.pyenv', 'shims'),
+  ];
+  // Prepend extra paths to PATH for this search
+  const origPath = process.env.PATH || '';
+  const searchPath = [...extraPaths, ...origPath.split(path.delimiter)].join(path.delimiter);
+
   const candidates = ['python3', 'python'];
   for (const cmd of candidates) {
     try {
@@ -225,16 +240,175 @@ function findPython() {
         encoding: 'utf8',
         timeout: 5000,
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, PATH: searchPath },
       });
+      const versionMatch = version.match(/(\d+)\.(\d+)/);
+      const major = versionMatch ? parseInt(versionMatch[1]) : 0;
+      const minor = versionMatch ? parseInt(versionMatch[2]) : 0;
+      if (major < 3 || (major === 3 && minor < 10)) {
+        console.log(`Skipping ${cmd} (${version.trim()}) — need 3.10+`);
+        continue;
+      }
       console.log(`Found Python: ${cmd} (${version.trim()})`);
+      // Also update process.env.PATH so subsequent calls find the same Python
+      process.env.PATH = searchPath;
       return cmd;
     } catch {
       // try next candidate
     }
   }
+
+  // Last resort: check for exact paths
+  const absoluteCandidates = [
+    '/opt/homebrew/bin/python3',
+    '/opt/anaconda3/bin/python3',
+    '/usr/local/bin/python3',
+  ];
+  for (const cmd of absoluteCandidates) {
+    try {
+      if (!fs.existsSync(cmd)) continue;
+      const version = execSync(`"${cmd}" --version`, {
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      console.log(`Found Python: ${cmd} (${version.trim()})`);
+      return cmd;
+    } catch {
+      // try next
+    }
+  }
+
   throw new Error(
-    'Python not found. Please install Python 3.10+ and ensure it is on your PATH.'
+    'Python 3.10+ not found. Please install Python from https://python.org and ensure it is on your PATH.'
   );
+}
+
+/**
+ * Ensure a virtual environment exists with all backend dependencies installed.
+ * Creates the venv in userData/python-env/ and installs requirements.txt.
+ * Re-installs if requirements.txt has changed (based on hash).
+ * Returns the path to the venv's Python executable.
+ */
+async function ensureVenv(pythonCmd, backendDir) {
+  const crypto = require('crypto');
+  const venvDir = path.join(app.getPath('userData'), 'python-env');
+  const venvPython = process.platform === 'win32'
+    ? path.join(venvDir, 'Scripts', 'python.exe')
+    : path.join(venvDir, 'bin', 'python');
+  const hashFile = path.join(venvDir, '.requirements-hash');
+  const requirementsPath = path.join(backendDir, 'requirements.txt');
+
+  // Compute hash of current requirements.txt
+  let currentHash = '';
+  if (fs.existsSync(requirementsPath)) {
+    const content = fs.readFileSync(requirementsPath, 'utf8');
+    currentHash = crypto.createHash('sha256').update(content).digest('hex');
+  }
+
+  // Check if venv exists and is up to date
+  let needsInstall = false;
+  if (!fs.existsSync(venvPython)) {
+    console.log('Creating Python virtual environment...');
+    updateSplash('Creating Python environment...', 12);
+    execSync(`${pythonCmd} -m venv "${venvDir}"`, {
+      encoding: 'utf8',
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    needsInstall = true;
+  } else {
+    // Check if requirements changed
+    let storedHash = '';
+    if (fs.existsSync(hashFile)) {
+      storedHash = fs.readFileSync(hashFile, 'utf8').trim();
+    }
+    if (storedHash !== currentHash) {
+      console.log('Requirements changed, reinstalling dependencies...');
+      needsInstall = true;
+    } else {
+      console.log('Virtual environment is up to date.');
+    }
+  }
+
+  if (needsInstall && fs.existsSync(requirementsPath)) {
+    console.log('Installing Python dependencies (this may take a few minutes on first launch)...');
+    updateSplash('Installing Python dependencies... (first launch only)', 14);
+
+    // Upgrade pip first
+    try {
+      execSync(`"${venvPython}" -m pip install --upgrade pip`, {
+        encoding: 'utf8',
+        timeout: 120000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      console.warn('pip upgrade failed (non-fatal):', e.message);
+    }
+
+    // Install requirements using spawn for live progress
+    const pipCmd = process.platform === 'win32'
+      ? path.join(venvDir, 'Scripts', 'pip')
+      : path.join(venvDir, 'bin', 'pip');
+
+    await new Promise((resolve, reject) => {
+      const pipProcess = spawn(
+        pipCmd,
+        ['install', '-r', requirementsPath],
+        {
+          cwd: backendDir,
+          env: { ...process.env, PYTHONUNBUFFERED: '1' },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
+
+      let installedCount = 0;
+      const handleOutput = (data) => {
+        const text = data.toString();
+        process.stdout.write(`[pip] ${text}`);
+        // Count installed packages for progress
+        const matches = text.match(/Successfully installed/g);
+        if (matches) installedCount += matches.length;
+        // Show current package being installed
+        const collecting = text.match(/Collecting (\S+)/);
+        if (collecting) {
+          updateSplash(`Installing: ${collecting[1]}...`, 15);
+        }
+        const downloading = text.match(/Downloading/);
+        if (downloading) {
+          updateSplash('Downloading dependencies...', 16);
+        }
+      };
+
+      pipProcess.stdout.on('data', handleOutput);
+      pipProcess.stderr.on('data', handleOutput);
+
+      pipProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log('Python dependencies installed successfully.');
+          resolve();
+        } else {
+          reject(new Error(`pip install failed with exit code ${code}`));
+        }
+      });
+
+      pipProcess.on('error', (err) => {
+        reject(new Error(`Failed to run pip: ${err.message}`));
+      });
+
+      // 10-minute timeout for large packages like torch
+      setTimeout(() => {
+        try { pipProcess.kill(); } catch {}
+        reject(new Error('pip install timed out after 10 minutes'));
+      }, 600000);
+    });
+
+    // Save hash
+    fs.writeFileSync(hashFile, currentHash, 'utf8');
+    console.log('Python dependencies installed successfully.');
+  }
+
+  return venvPython;
 }
 
 /**
@@ -280,10 +454,6 @@ function waitForUrl(url, { interval = 500, maxRetries = 60 } = {}) {
   });
 }
 
-/**
- * Kill any existing process listening on the given port.
- * Prevents "address already in use" when restarting the app.
- */
 /**
  * Find a random available port. Eliminates all port conflicts.
  */
@@ -334,11 +504,23 @@ function spawnDjango(pythonCmd, djangoPort, backendDir) {
     const text = data.toString();
     process.stderr.write(`[django] ${text}`);
     // Detect fatal startup errors early
-    const fatal = ['Address already in use', 'SyntaxError', 'IndentationError',
-                   'ModuleNotFoundError', 'ImproperlyConfigured'].find(e => text.includes(e));
-    if (fatal && startupReject) {
-      startupReject(new Error(`Django startup failed: ${fatal}`));
-      startupReject = null; // Only reject once
+    // Detect fatal startup errors early and capture details
+    const fatalPatterns = [
+      /Address already in use/,
+      /SyntaxError/,
+      /IndentationError/,
+      /ModuleNotFoundError: No module named '([^']+)'/,
+      /ImportError: cannot import name '([^']+)'/,
+      /ImproperlyConfigured/,
+    ];
+    for (const pattern of fatalPatterns) {
+      const match = text.match(pattern);
+      if (match && startupReject) {
+        const detail = match[1] ? `${match[0]}` : match[0];
+        startupReject(new Error(`Django startup failed:\n${detail}`));
+        startupReject = null;
+        break;
+      }
     }
   });
 
@@ -772,13 +954,29 @@ app.whenReady().then(async () => {
       console.log(`.env loaded from ${envPath} (${Object.keys(dotEnvVars).length} vars)`);
       Object.assign(process.env, dotEnvVars);
 
+      // Ensure Python virtual environment with all dependencies
+      updateSplash('Checking Python environment...', 12);
+      let venvPython;
+      try {
+        venvPython = await ensureVenv(pythonCmd, backendDir);
+        console.log(`Using venv Python: ${venvPython}`);
+      } catch (err) {
+        if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+        dialog.showErrorBox(
+          'Dependency Installation Failed',
+          `Failed to install Python dependencies.\n\n${err.message}\n\nPlease ensure you have internet access and try again.`
+        );
+        app.quit();
+        return;
+      }
+
       // Run migrations (async, non-blocking)
-      updateSplash('Running database migrations...', 15);
-      await runMigrations(pythonCmd, backendDir, dotEnvVars);
+      updateSplash('Running database migrations...', 20);
+      await runMigrations(venvPython, backendDir, dotEnvVars);
 
       // Spawn Django on random port
-      updateSplash('Starting backend server...', 25);
-      const { child: djangoChild, startupPromise } = spawnDjango(pythonCmd, djangoPort, backendDir);
+      updateSplash('Starting backend server...', 30);
+      const { child: djangoChild, startupPromise } = spawnDjango(venvPython, djangoPort, backendDir);
       djangoProcess = djangoChild;
 
       // Wait for Django — race between health check and startup errors
@@ -787,7 +985,7 @@ app.whenReady().then(async () => {
       const maxExpectedSeconds = 45;
       const statusInterval = setInterval(() => {
         waitSeconds++;
-        const pct = Math.min(85, 25 + Math.round((waitSeconds / maxExpectedSeconds) * 60));
+        const pct = Math.min(85, 30 + Math.round((waitSeconds / maxExpectedSeconds) * 55));
         updateSplash(`Starting backend server... (${waitSeconds}s)`, pct);
       }, 1000);
 
