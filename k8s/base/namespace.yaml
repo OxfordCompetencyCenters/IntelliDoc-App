@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-catalogue
+  labels:
+    name: ai-catalogue
+    app: ai-catalogue
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-catalogue-dev
+  labels:
+    name: ai-catalogue-dev
+    app: ai-catalogue
+    environment: development

@@ -1,0 +1,77 @@
+# Dependencies
+node_modules/
+frontend/my-sveltekit-app/node_modules/
+frontend/my-sveltekit-app/.svelte-kit/
+frontend/my-sveltekit-app/.vite_cache/
+
+# Build outputs
+dist/
+frontend/my-sveltekit-app/build/
+frontend/my-sveltekit-app/build-static/
+resources/static-app/
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/**/__pycache__/
+*.pyc
+*.pyo
+
+# Database & data (user-specific)
+backend/db.sqlite3
+backend/chromadb_data/
+backend/.cache/
+backend/media/
+backend/staticfiles/
+
+# Large files / documentation images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.tex
+*.bib
+
+# Docker compose files (not needed for Electron)
+docker-compose*.yml
+
+# Pytest cache
+backend/.pytest_cache/
+
+# Volumes
+volumes/
+
+# Milvus configs (removed)
+backend/milvus*.yaml
+backend/docker-compose-milvus*
+backend/cleanup_milvus_files.sh
+
+# Environment
+.env
+backend/.env
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Backup files
+*.backup*
+*.bak
+*~
+
+# Lock files (regenerated on install)
+package-lock.json
+frontend/my-sveltekit-app/package-lock.json
+
+# Electron
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.blockmap

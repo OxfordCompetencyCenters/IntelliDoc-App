@@ -1,0 +1,16 @@
+# Public Chatbot Dependencies - Isolated from main system
+# Install with: pip install -r public_chatbot/requirements.txt
+
+# ChromaDB for isolated vector database
+chromadb==0.4.24
+
+# Rate limiting (optional, has fallback)
+django-ratelimit==4.1.0
+
+# Already available in your system (no need to reinstall):
+# - sentence-transformers (for embeddings)
+# - openai (for LLM integration)  
+# - google-generativeai (for Gemini)
+# - anthropic (for Claude)
+# - Django 5.2+ (your existing version)
+# - django-cors-headers (your existing setup)

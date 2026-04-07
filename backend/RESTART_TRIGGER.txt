@@ -1,0 +1,1 @@
+Trigger restart after adding missing endpoints to UniversalProjectViewSet

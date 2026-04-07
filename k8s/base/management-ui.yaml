@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgadmin
+  namespace: ai-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgadmin
+  template:
+    metadata:
+      labels:
+        app: pgadmin
+    spec:
+      containers:
+      - name: pgadmin
+        image: dpage/pgadmin4:latest
+        envFrom:
+        - configMapRef:
+            name: ai-catalogue-config
+        - secretRef:
+            name: ai-catalogue-secrets
+        env:
+        - name: PGADMIN_DEFAULT_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: ai-catalogue-config
+              key: PGADMIN_EMAIL
+        - name: PGADMIN_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-catalogue-secrets
+              key: PGADMIN_PASSWORD
+        - name: PGADMIN_CONFIG_SERVER_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: ai-catalogue-config
+              key: PGADMIN_SERVER_MODE
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: pgadmin-data
+          mountPath: /var/lib/pgadmin
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+      volumes:
+      - name: pgadmin-data
+        persistentVolumeClaim:
+          claimName: pgadmin-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgadmin-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: pgadmin
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attu
+  namespace: ai-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: attu
+  template:
+    metadata:
+      labels:
+        app: attu
+    spec:
+      containers:
+      - name: attu
+        image: zilliz/attu:latest
+        envFrom:
+        - configMapRef:
+            name: ai-catalogue-config
+        env:
+        - name: HOST_URL
+          valueFrom:
+            configMapKeyRef:
+              name: ai-catalogue-config
+              key: ATTU_HOST_URL
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "125m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: attu-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: attu
+  ports:
+  - protocol: TCP
+    port: 3001
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgadmin-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"

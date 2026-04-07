@@ -1,0 +1,5 @@
+pymilvus>=2.3.0
+django>=4.0.0
+numpy>=1.21.0
+redis>=4.0.0  # Optional, for caching
+django-redis>=5.0.0  # Optional, for caching

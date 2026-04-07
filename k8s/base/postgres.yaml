@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: ai-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        envFrom:
+        - configMapRef:
+            name: ai-catalogue-config
+        - secretRef:
+            name: ai-catalogue-secrets
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: ai-catalogue-config
+              key: DB_NAME
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: ai-catalogue-config
+              key: DB_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-catalogue-secrets
+              key: DB_PASSWORD
+        - name: POSTGRES_HOST_AUTH_METHOD
+          valueFrom:
+            configMapKeyRef:
+              name: ai-catalogue-config
+              key: DB_AUTH_METHOD
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d/init_db.sql
+          subPath: init_db.sql
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - ai_catalogue_user
+            - -d
+            - ai_catalogue_db
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - ai_catalogue_user
+            - -d
+            - ai_catalogue_db
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: init-sql
+        configMap:
+          name: postgres-init-sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: postgres
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: ai-catalogue
+data:
+  init_db.sql: |
+    -- Initialize AI Catalogue Database
+    -- This file is executed when the PostgreSQL container starts for the first time
+    
+    -- Create extensions if they don't exist
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON DATABASE ai_catalogue_db TO ai_catalogue_user;
+    
+    -- Additional initialization can be added here

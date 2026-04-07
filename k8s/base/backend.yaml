@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ai-catalogue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z postgres-service 5432; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+      - name: wait-for-milvus
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z milvus-service 19530; do
+            echo "Waiting for milvus..."
+            sleep 2
+          done
+      containers:
+      - name: backend
+        image: "${CONTAINER_REGISTRY}/ai-catalogue-backend:${IMAGE_TAG}"
+        envFrom:
+        - configMapRef:
+            name: ai-catalogue-config
+        - secretRef:
+            name: ai-catalogue-secrets
+        env:
+        # Override container-specific settings
+        - name: DB_HOST
+          value: "postgres-service"
+        - name: MILVUS_HOST
+          value: "milvus-service"
+        - name: MINIO_HOST
+          value: "minio-service"
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: backend-media
+          mountPath: /app/media
+        - name: backend-logs
+          mountPath: /app/logs
+        - name: milvus-volumes
+          mountPath: /app/volumes
+        livenessProbe:
+          httpGet:
+            path: /admin/
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /admin/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 30
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: backend-media
+        persistentVolumeClaim:
+          claimName: backend-media-pvc
+      - name: backend-logs
+        persistentVolumeClaim:
+          claimName: backend-logs-pvc
+      - name: milvus-volumes
+        persistentVolumeClaim:
+          claimName: milvus-volumes-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: backend
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-media-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-logs-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-volumes-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: ai-catalogue
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

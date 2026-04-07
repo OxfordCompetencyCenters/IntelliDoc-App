@@ -1,0 +1,154 @@
+# Production Dockerfile for Django backend
+FROM python:3.13-slim AS production
+
+WORKDIR /app
+
+# Configure apt to handle network timeouts better
+RUN echo 'Acquire::http::Timeout "60";' > /etc/apt/apt.conf.d/99timeout && \
+    echo 'Acquire::ftp::Timeout "60";' >> /etc/apt/apt.conf.d/99timeout && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99timeout
+
+# Install essential system dependencies (must succeed)
+RUN set -eux; \
+    # Retry apt-get update up to 5 times with exponential backoff
+    for i in 1 2 3 4 5; do \
+        apt-get update --fix-missing && break || (echo "Retry $i failed, waiting..." && sleep $((i * 5))); \
+    done && \
+    # Install essential packages first
+    apt-get install -y --no-install-recommends \
+        curl \
+        wget \
+        ca-certificates \
+        gnupg2 \
+        build-essential \
+        python3-dev \
+        libpq-dev \
+        pkg-config \
+        libxml2-dev \
+        libxslt1-dev \
+        libjpeg-dev \
+        libmagic1 \
+    && \
+    # Install git separately with retry logic
+    (apt-get install -y --no-install-recommends git || \
+     (echo "Warning: git install failed, retrying..." && sleep 10 && \
+      apt-get install -y --no-install-recommends git || \
+      echo "Warning: git installation failed, continuing without it...")) && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install document processing tools (optional - don't fail build)
+RUN set +e; \
+    apt-get update --fix-missing || true; \
+    apt-get install -y --no-install-recommends \
+        poppler-utils \
+        tesseract-ocr \
+        antiword \
+        unrtf \
+    || (echo "Warning: Document tools failed, retrying..." && \
+        sleep 10 && \
+        apt-get update --fix-missing && \
+        apt-get install -y --no-install-recommends \
+            poppler-utils \
+            tesseract-ocr \
+            antiword \
+            unrtf \
+    || echo "Warning: Document tools installation failed, continuing without them..."); \
+    rm -rf /var/lib/apt/lists/* || true
+
+# Install audio processing tools (optional - don't fail build)
+RUN set +e; \
+    apt-get update --fix-missing || true; \
+    apt-get install -y --no-install-recommends \
+        flac \
+        ffmpeg \
+        lame \
+        libmad0 \
+        libsox-fmt-mp3 \
+        sox \
+        swig \
+        libpulse-dev \
+    || (echo "Warning: Audio packages failed, retrying..." && \
+        sleep 10 && \
+        apt-get update --fix-missing && \
+        apt-get install -y --no-install-recommends \
+            flac \
+            ffmpeg \
+            lame \
+            libmad0 \
+            libsox-fmt-mp3 \
+            sox \
+            swig \
+            libpulse-dev \
+    || echo "Warning: Audio packages failed to install, continuing without them..."); \
+    rm -rf /var/lib/apt/lists/* || true; \
+    apt-get clean || true
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies (production only, no dev tools)
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Pre-download BERTScore models during build (optional - don't fail build if it fails)
+RUN set +e; \
+    echo "Pre-downloading BERTScore models..." && \
+    python3 -c "\
+import sys; \
+try: \
+    from bert_score import score; \
+    print('Downloading BERTScore models for English...'); \
+    P, R, F1 = score(['This is a test sentence.'], ['This is a test sentence.'], lang='en', verbose=False, device='cpu'); \
+    print('BERTScore models downloaded successfully'); \
+except Exception as e: \
+    print(f'Warning: BERTScore model pre-download failed: {e}'); \
+    print('Models will be downloaded on first use during evaluation'); \
+    sys.exit(0) \
+" || echo "BERTScore model download skipped (will download on first use)"; \
+    echo "BERTScore model pre-download step completed"
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/media /app/logs /app/volumes /app/staticfiles
+
+# Create a non-root user for security
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Production startup script
+# 1. Collect static files
+# 2. Run database migrations
+# 3. Setup container data
+# 4. Start Gunicorn
+CMD ["sh", "-c", "\
+    echo 'Collecting static files...' && \
+    python manage.py collectstatic --noinput && \
+    echo 'Running database migrations...' && \
+    python manage.py migrate --noinput && \
+    echo 'Setting up container data...' && \
+    python manage.py setup_container_data || echo 'setup_container_data skipped or failed (non-fatal)' && \
+    echo 'Starting Gunicorn production server...' && \
+    exec gunicorn ai_catalogue.wsgi:application \
+        --bind 0.0.0.0:8000 \
+        --workers 4 \
+        --threads 2 \
+        --timeout 300 \
+        --keep-alive 5 \
+        --max-requests 1000 \
+        --max-requests-jitter 100 \
+        --access-logfile - \
+        --error-logfile - \
+        --capture-output \
+        --enable-stdio-inheritance \
+"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1

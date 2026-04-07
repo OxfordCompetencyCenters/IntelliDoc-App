@@ -1,0 +1,87 @@
+# requirements.txt - Python 3.13 Compatible (AutoGen COMPLETELY REMOVED)
+
+Django>=5.2
+djangorestframework>=3.15.0
+django-cors-headers>=4.3.1
+pyjwt>=2.8.0
+djangorestframework-simplejwt
+aiohttp>=3.9.1
+cryptography>=41.0.7
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Vector Search Dependencies (Python 3.13 compatible)
+numpy>=1.24.0
+pandas>=2.0.0
+sentence-transformers>=2.2.2
+python-magic
+
+# Public Chatbot Dependencies (isolated from main system)
+chromadb==1.0.20
+django-ratelimit>=4.1.0
+
+# Django Milvus Search Dependencies
+# (pymilvus and numpy already included above)
+# django-redis>=5.0.0  # Optional, for caching
+
+# Text Extraction Dependencies (Enhanced for Bulk Upload)
+PyPDF2>=3.0.1
+pdfplumber>=0.9.0           # Advanced PDF text extraction
+python-docx>=0.8.11
+openpyxl>=3.1.2
+markdown>=3.5.1
+beautifulsoup4>=4.12.0      # HTML parsing and text extraction
+chardet>=5.2.0              # Character encoding detection
+
+# Gemini API for PDF and Image OCR
+google-genai>=0.2.0
+google-generativeai>=0.3.0
+pdf2image>=1.16.0
+PyMuPDF>=1.23.0
+
+# OpenAI API for Content Summarization
+openai>=1.0.0
+
+# MCP Server Dependencies
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+msal>=1.24.0
+
+# Performance monitoring and caching
+psutil>=5.9.0
+packaging>=21.0
+
+# Agent Orchestration Dependencies (CUSTOM Implementation - NO AutoGen)
+celery>=5.3.0
+channels>=4.0.0
+asgiref>=3.7.0
+
+# 🎯 CUSTOM AGENT ORCHESTRATION DEPENDENCIES (Our Own Implementation)
+jsonschema>=4.0.0      # JSON Schema validation for workflow definitions
+websockets>=11.0.0     # Real-time communication
+anthropic>=0.3.0       # Anthropic Claude API
+
+# 🎯 REAL-TIME EXECUTION DEPENDENCIES (Custom Implementation)
+aiofiles>=23.0.0       # Async file operations
+watchdog>=3.0.0        # File system monitoring
+timeout-decorator>=0.5.0  # Function timeouts
+
+# 🌐 WEB SEARCH DEPENDENCIES
+ddgs>=7.0.0  # DuckDuckGo web search API (renamed from duckduckgo-search)
+
+# ❌ COMPLETELY REMOVED: All AutoGen dependencies
+# pyautogen - REMOVED
+# autogen-agentchat - REMOVED
+# autogen-core - REMOVED
+# docker - REMOVED (was only for AutoGen sandbox)
+
+# Workflow Evaluation Metrics
+rouge-score>=0.1.2
+nltk>=3.8.1
+sacrebleu>=2.3.1
+bert-score>=0.3.13
+torch>=2.0.0  # Required for bert-score
+
+# Production Web Server
+gunicorn>=21.0.0

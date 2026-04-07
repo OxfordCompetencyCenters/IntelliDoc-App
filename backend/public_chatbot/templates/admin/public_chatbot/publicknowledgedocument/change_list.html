@@ -1,0 +1,39 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if has_add_permission %}
+    <li>
+        <a href="{{ bulk_upload_url }}" class="addlink">
+            📁 Bulk Upload Documents
+        </a>
+    </li>
+    {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .object-tools .addlink {
+        background: linear-gradient(135deg, #3498db, #2980b9) !important;
+        color: white !important;
+        border-radius: 6px !important;
+        padding: 8px 16px !important;
+        text-decoration: none !important;
+        font-weight: 500 !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3) !important;
+    }
+    
+    .object-tools .addlink:hover {
+        background: linear-gradient(135deg, #2980b9, #21618c) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 8px rgba(52, 152, 219, 0.4) !important;
+    }
+    
+    .object-tools li {
+        margin-left: 10px !important;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,227 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-catalogue-config
+  namespace: ai-catalogue
+data:
+  # Database Configuration
+  DB_NAME: "ai_catalogue_db"
+  DB_USER: "ai_catalogue_user"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_AUTH_METHOD: "md5"
+  
+  # Milvus Configuration
+  MILVUS_HOST: "milvus-service"
+  MILVUS_PORT: "19530"
+  MILVUS_ROOT_USER: "root"
+  
+  # MinIO Configuration
+  MINIO_ROOT_USER: "minioadmin"
+  
+  # Web UI Configuration
+  PGADMIN_EMAIL: "admin@yourdomain.com"
+  PGADMIN_SERVER_MODE: "False"
+  PGADMIN_PORT: "8080"
+  
+  ATTU_HOST_URL: "http://localhost:3001"
+  ATTU_PORT: "3001"
+  
+  # Nginx Configuration
+  NGINX_HTTP_PORT: "80"
+  NGINX_HTTPS_PORT: "443"
+  
+  # Django Configuration
+  DEBUG: "False"
+  ALLOWED_HOSTS: "localhost,127.0.0.1,backend,frontend,nginx"
+  CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+  CORS_ALLOW_ALL_ORIGINS: "False"
+  CSRF_TRUSTED_ORIGINS: "http://localhost:3000"
+  
+  # Performance Configuration
+  TOKENIZERS_PARALLELISM: "false"
+  PYTORCH_ENABLE_MPS_FALLBACK: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  
+  # Frontend Configuration
+  NODE_ENV: "production"
+  FRONTEND_PORT: "3000"
+  BACKEND_URL: "http://backend-service:8000"
+  
+  # Development Configuration
+  DEVELOPMENT_MODE: "false"
+  FRONTEND_DEV_PORT: "5173"
+  BACKEND_DEV_PORT: "8000"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-catalogue-config-dev
+  namespace: ai-catalogue-dev
+data:
+  # Database Configuration
+  DB_NAME: "ai_catalogue_db_dev"
+  DB_USER: "ai_catalogue_user"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_AUTH_METHOD: "md5"
+  
+  # Milvus Configuration
+  MILVUS_HOST: "milvus-service"
+  MILVUS_PORT: "19530"
+  MILVUS_ROOT_USER: "root"
+  
+  # MinIO Configuration
+  MINIO_ROOT_USER: "minioadmin"
+  
+  # Django Configuration
+  DEBUG: "True"
+  ALLOWED_HOSTS: "localhost,127.0.0.1,backend,frontend,nginx,backend-service,frontend-dev-service"
+  CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
+  CORS_ALLOW_ALL_ORIGINS: "True"
+  CSRF_TRUSTED_ORIGINS: "http://localhost:5173,http://localhost:3000"
+  
+  # Development specific
+  DEVELOPMENT_MODE: "true"
+  NODE_ENV: "development"
+  DJANGO_DEBUG_TOOLBAR: "True"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: milvus-config
+  namespace: ai-catalogue
+data:
+  milvus.yaml: |
+    # Milvus 2.4.x Configuration
+    # Enhanced configuration for multi-vector support and performance
+
+    etcd:
+      endpoints:
+        - etcd-service:2379
+      rootPath: by-dev
+      metaSubPath: meta
+      kvSubPath: kv
+
+    metastore:
+      type: etcd
+
+    minio:
+      address: minio-service
+      port: 9000
+      accessKeyID: minioadmin
+      secretAccessKey: SecureMinioPassword123!
+      useSSL: false
+      bucketName: "a-bucket"
+      rootPath: files
+
+    localStorage:
+      path: /var/lib/milvus/data
+
+    mq:
+      type: rocksmq
+      rocksmq:
+        path: /var/lib/milvus/rdb_data
+        lrucacheratio: 0.06
+        rocksmqPageSize: 67108864
+        retentionTimeInMinutes: 4320
+        retentionSizeInMB: 8192
+        compactionInterval: 86400
+
+    # Enhanced proxy settings for multi-vector support
+    proxy:
+      port: 19530
+      internalPort: 19529
+      http:
+        enabled: true
+        port: 9091
+      grpc:
+        serverMaxRecvSize: 67108864
+        serverMaxSendSize: 67108864
+        clientMaxRecvSize: 104857600
+        clientMaxSendSize: 104857600
+      # Multi-vector field configuration
+      maxVectorFieldNum: 10  # Support up to 10 vector fields per collection
+      maxDimension: 32768
+      maxUserNum: 100
+      maxRoleNum: 10
+
+    # Query node configuration
+    queryNode:
+      cacheSize: 32
+      enableDisk: true
+      maxDiskUsagePercentage: 95
+
+    # Data node configuration  
+    dataNode:
+      dataSync:
+        flushManager:
+          flushCheckInterval: 1000
+      memory:
+        forceSyncEnable: true
+        forceSyncSegmentNum: 1
+
+    # Index node configuration
+    indexNode:
+      scheduler:
+        buildParallel: 1
+      enableDisk: true
+      maxDiskUsagePercentage: 95
+
+    # Root coordinator configuration
+    rootCoord:
+      minSegmentSizeToEnableIndex: 1024
+      maxPartitionNum: 4096
+      minSegmentSizeToEnableIndex: 1024
+
+    # Enhanced logging
+    log:
+      level: info
+      file:
+        maxSize: 300
+        maxAge: 10
+        maxBackups: 20
+      format: text
+
+    # Common configuration
+    common:
+      defaultPartitionName: "_default"
+      defaultIndexName: "_default_idx"
+      entityExpiration: -1
+      indexSliceSize: 16
+      # Enable dynamic field for flexibility
+      enableDynamicField: true
+      
+    # Security settings
+    common:
+      security:
+        authorizationEnabled: true
+        tlsMode: 0
+
+    # Performance tuning
+    queryCoord:
+      autoHandoff: true
+      autoBalance: true
+      balanceIntervalSeconds: 60
+      overloadedMemoryThresholdPercentage: 90
+
+    dataCoord:
+      segment:
+        maxSize: 1024
+        sealProportion: 0.12
+        assignmentExpiration: 2000
+      compaction:
+        enableAutoCompaction: true
+        
+    # Memory management
+    quotaAndLimits:
+      enabled: true
+      limits:
+        allocProtection:
+          enabled: true
+          memProtection:
+            enabled: true
+            dataNodeMemoryLowWaterLevel: 0.85
+            dataNodeMemoryHighWaterLevel: 0.95
+            queryNodeMemoryLowWaterLevel: 0.85
+            queryNodeMemoryHighWaterLevel: 0.95

@@ -1,0 +1,537 @@
+/* src/app.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Oxford University Color Variables */
+:root {
+  /* Primary Oxford Blue */
+  --oxford-blue: #002147;
+  --oxford-blue-rgb: 0, 33, 71;
+  
+  /* Oxford Blue Palette */
+  --oxford-50: #f0f4f8;
+  --oxford-100: #d9e2ec;
+  --oxford-200: #bcccdc;
+  --oxford-300: #9fb3c8;
+  --oxford-400: #829ab1;
+  --oxford-500: #627d98;
+  --oxford-600: #486581;
+  --oxford-700: #334e68;
+  --oxford-800: #243b53;
+  --oxford-900: #002147;
+  --oxford-950: #001122;
+  --oxford-975: #000b11;
+  
+  /* Supporting Academic Colors */
+  --accent-gold: #FFD700;
+  --accent-silver: #C0C0C0;
+  --accent-cream: #F5F5DC;
+  --accent-pearl: #F8F8FF;
+  
+  /* Status Colors */
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --error-color: #ef4444;
+  --info-color: #3b82f6;
+  
+  /* Legacy color variables for backward compatibility */
+  --primary-color: var(--oxford-blue);
+  --secondary-color: var(--oxford-600);
+  --dark-color: var(--oxford-800);
+  --light-color: var(--oxford-50);
+  --danger-color: var(--error-color);
+}
+
+
+/* Base Styles */
+html, body {
+  height: 100%;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body {
+  background-color: var(--oxford-50);
+  color: var(--oxford-800);
+}
+
+/* Ensure all containers have proper background */
+#svelte {
+  min-height: 100vh;
+  background-color: var(--oxford-50);
+  transition: background-color 0.3s ease;
+}
+
+main {
+  background-color: var(--oxford-50);
+  transition: background-color 0.3s ease;
+}
+
+/* Oxford Button Components */
+.btn {
+  @apply px-4 py-2 rounded-md font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.btn-oxford-primary {
+  @apply bg-oxford-blue text-white hover:bg-oxford-800 focus:ring-oxford-500;
+  box-shadow: 0 2px 4px rgba(0, 33, 71, 0.1);
+}
+
+.btn-oxford-primary:hover {
+  box-shadow: 0 4px 8px rgba(0, 33, 71, 0.2);
+  transform: translateY(-1px);
+}
+
+.btn-oxford-secondary {
+  @apply bg-oxford-100 text-oxford-800 hover:bg-oxford-200 focus:ring-oxford-300 border border-oxford-200;
+}
+
+.btn-oxford-outline {
+  @apply bg-transparent text-oxford-blue border border-oxford-blue hover:bg-oxford-blue hover:text-white focus:ring-oxford-500;
+}
+
+.btn-oxford-ghost {
+  @apply bg-transparent text-oxford-700 hover:bg-oxford-50 focus:ring-oxford-300;
+}
+
+/* Legacy button classes for backward compatibility */
+.btn-primary {
+  @apply btn-oxford-primary;
+}
+
+.btn-secondary {
+  @apply btn-oxford-secondary;
+}
+
+.btn-danger {
+  @apply bg-red-500 text-white hover:bg-red-600 focus:ring-red-300;
+}
+
+/* Oxford Form Components */
+.form-input {
+  @apply w-full px-3 py-2 border border-oxford-200 rounded-md text-oxford-800 placeholder-oxford-400 
+         focus:outline-none focus:ring-2 focus:ring-oxford-500 focus:border-oxford-500 
+         transition-colors duration-200;
+  background-color: var(--accent-pearl);
+}
+
+.form-input:focus {
+  box-shadow: 0 0 0 3px rgba(0, 33, 71, 0.1);
+}
+
+.form-label {
+  @apply block text-sm font-medium text-oxford-700 mb-1;
+}
+
+.form-error {
+  @apply text-red-500 text-sm mt-1;
+}
+
+.form-success {
+  @apply text-green-600 text-sm mt-1;
+}
+
+/* Oxford Card Components */
+.card-oxford {
+  @apply bg-white rounded-lg border border-oxford-200 p-6;
+  box-shadow: 0 4px 14px 0 rgba(0, 33, 71, 0.08);
+}
+
+.card-oxford:hover {
+  box-shadow: 0 8px 25px 0 rgba(0, 33, 71, 0.15);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+.card-oxford-header {
+  @apply border-b border-oxford-100 pb-4 mb-4;
+}
+
+.card-oxford-title {
+  @apply text-lg font-semibold text-oxford-800;
+}
+
+.card-oxford-subtitle {
+  @apply text-sm text-oxford-600 mt-1;
+}
+
+/* Oxford Badge Components */
+.badge-oxford {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-oxford-primary {
+  @apply badge-oxford bg-oxford-100 text-oxford-800;
+}
+
+.badge-oxford-gold {
+  @apply badge-oxford text-oxford-800;
+  background-color: var(--accent-gold);
+}
+
+.badge-oxford-success {
+  @apply badge-oxford bg-green-100 text-green-800;
+}
+
+.badge-oxford-warning {
+  @apply badge-oxford bg-yellow-100 text-yellow-800;
+}
+
+.badge-oxford-error {
+  @apply badge-oxford bg-red-100 text-red-800;
+}
+
+/* Navigation specific overrides - Force white text in all modes */
+.nav-oxford {
+  background-color: #002147;
+  background-image: linear-gradient(135deg, #002147 0%, #243b53 100%);
+}
+
+/* Force white text for all navigation elements */
+.nav-oxford a,
+.nav-oxford span {
+  color: white !important;
+}
+
+/* Force white text for logo and navigation items */
+.nav-oxford .logo-text {
+  color: white !important;
+  font-weight: bold !important;
+}
+
+.nav-oxford .nav-link {
+  color: white !important;
+}
+
+/* Override any universal theme text colors for navigation */
+.nav-oxford .universal-text,
+.nav-oxford .universal-text-primary,
+.nav-oxford .universal-text-secondary {
+  color: white !important;
+}
+
+/* Exception for gray text that should remain gray */
+.nav-oxford .text-gray-300 {
+  color: #d1d5db !important;
+}
+
+.nav-oxford .text-gray-400 {
+  color: #9ca3af !important;
+}
+
+.nav-oxford-item {
+  @apply text-oxford-100 hover:text-white hover:bg-oxford-800 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200;
+}
+
+.nav-oxford-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-oxford-item.active {
+  @apply bg-oxford-950 text-white;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Oxford Dashboard Styles */
+.dashboard-oxford {
+  @apply min-h-screen;
+  background: linear-gradient(135deg, var(--oxford-50) 0%, var(--oxford-100) 100%);
+}
+
+.dashboard-icon-oxford {
+  @apply bg-white rounded-xl p-6 text-center transition-all duration-300 cursor-pointer border border-oxford-200;
+  box-shadow: 0 2px 8px rgba(0, 33, 71, 0.1);
+}
+
+.dashboard-icon-oxford:hover {
+  @apply border-oxford-300;
+  box-shadow: 0 8px 25px rgba(0, 33, 71, 0.15);
+  transform: translateY(-4px);
+}
+
+.dashboard-icon-oxford .icon {
+  @apply text-3xl mb-3;
+  color: var(--oxford-blue);
+}
+
+.dashboard-icon-oxford .title {
+  @apply text-lg font-semibold text-oxford-800 mb-2;
+}
+
+.dashboard-icon-oxford .description {
+  @apply text-sm text-oxford-600;
+}
+
+/* Oxford Table Styles */
+.table-oxford {
+  @apply w-full bg-white rounded-lg overflow-hidden;
+  box-shadow: 0 4px 14px 0 rgba(0, 33, 71, 0.08);
+}
+
+.table-oxford thead {
+  @apply bg-oxford-blue text-white;
+}
+
+.table-oxford th {
+  @apply px-6 py-3 text-left text-xs font-medium uppercase tracking-wider;
+}
+
+.table-oxford td {
+  @apply px-6 py-4 whitespace-nowrap text-sm text-oxford-800;
+}
+
+.table-oxford tbody tr {
+  @apply border-b border-oxford-100;
+}
+
+.table-oxford tbody tr:hover {
+  @apply bg-oxford-50;
+}
+
+/* Oxford Alert Components */
+.alert-oxford {
+  @apply p-4 rounded-md border-l-4;
+}
+
+.alert-oxford-info {
+  @apply alert-oxford bg-blue-50 border-blue-400 text-blue-800;
+}
+
+.alert-oxford-success {
+  @apply alert-oxford bg-green-50 border-green-400 text-green-800;
+}
+
+.alert-oxford-warning {
+  @apply alert-oxford bg-yellow-50 border-yellow-400 text-yellow-800;
+}
+
+.alert-oxford-error {
+  @apply alert-oxford bg-red-50 border-red-400 text-red-800;
+}
+
+/* Oxford Loading Spinner */
+.spinner-oxford {
+  @apply inline-block w-6 h-6 border-2 border-oxford-200 border-t-oxford-blue rounded-full animate-spin;
+}
+
+/* Oxford Typography */
+.heading-oxford-1 {
+  @apply text-3xl font-bold text-oxford-800 mb-4;
+}
+
+.heading-oxford-2 {
+  @apply text-2xl font-semibold text-oxford-800 mb-3;
+}
+
+.heading-oxford-3 {
+  @apply text-xl font-medium text-oxford-800 mb-2;
+}
+
+.text-oxford-primary {
+  @apply text-oxford-blue;
+}
+
+.text-oxford-secondary {
+  @apply text-oxford-600;
+}
+
+.text-oxford-muted {
+  @apply text-oxford-400;
+}
+
+/* Oxford Layout Utilities */
+.container-oxford {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+.section-oxford {
+  @apply py-8;
+}
+
+.divider-oxford {
+  @apply border-t border-oxford-200 my-6;
+}
+
+/* Oxford Animation Classes */
+.fade-in-oxford {
+  animation: fadeInOxford 0.3s ease-in;
+}
+
+@keyframes fadeInOxford {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in-oxford {
+  animation: slideInOxford 0.4s ease-out;
+}
+
+@keyframes slideInOxford {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Oxford Focus States */
+.focus-oxford:focus {
+  @apply outline-none ring-2 ring-oxford-500 ring-offset-2;
+}
+
+/* Oxford Scroll Styles */
+.scrollbar-oxford::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-oxford::-webkit-scrollbar-track {
+  background: var(--oxford-100);
+  border-radius: 3px;
+}
+
+.scrollbar-oxford::-webkit-scrollbar-thumb {
+  background: var(--oxford-400);
+  border-radius: 3px;
+}
+
+.scrollbar-oxford::-webkit-scrollbar-thumb:hover {
+  background: var(--oxford-600);
+}
+
+/* Responsive Design Enhancements */
+@media (max-width: 640px) {
+  .dashboard-icon-oxford {
+    @apply p-4;
+  }
+  
+  .container-oxford {
+    @apply px-3;
+  }
+}
+
+/* Dynamic Icon Color Classes for Dashboard Icons */
+.icon-oxford-blue { color: #002147; }
+.icon-oxford-blue-light { color: #334e68; }
+.icon-oxford-blue-dark { color: #001122; }
+
+.icon-academic-gold { color: #FFD700; }
+.icon-antique-gold { color: #CD7F32; }
+
+.icon-burgundy { color: #800020; }
+.icon-forest-green { color: #228B22; }
+.icon-royal-purple { color: #663399; }
+.icon-crimson { color: #DC143C; }
+
+.icon-charcoal { color: #36454F; }
+.icon-slate { color: #708090; }
+.icon-pearl { color: #F8F8FF; }
+.icon-cream { color: #F5F5DC; }
+
+.icon-success { color: #10B981; }
+.icon-warning { color: #F59E0B; }
+.icon-error { color: #EF4444; }
+.icon-info { color: #3B82F6; }
+
+.icon-emerald { color: #50C878; }
+.icon-sapphire { color: #0F52BA; }
+.icon-ruby { color: #E0115F; }
+.icon-amber { color: #FFBF00; }
+
+.icon-teal { color: #008080; }
+.icon-indigo { color: #4B0082; }
+.icon-coral { color: #FF7F50; }
+.icon-mint { color: #98FB98; }
+
+/* Background Color Classes for Cards/Containers */
+.bg-oxford-blue { background-color: #002147; }
+.bg-oxford-blue-light { background-color: #334e68; }
+.bg-oxford-blue-dark { background-color: #001122; }
+
+.bg-academic-gold { background-color: #FFD700; }
+.bg-antique-gold { background-color: #CD7F32; }
+
+.bg-burgundy { background-color: #800020; }
+.bg-forest-green { background-color: #228B22; }
+.bg-royal-purple { background-color: #663399; }
+.bg-crimson { background-color: #DC143C; }
+
+.bg-charcoal { background-color: #36454F; }
+.bg-slate { background-color: #708090; }
+.bg-pearl { background-color: #F8F8FF; }
+.bg-cream { background-color: #F5F5DC; }
+
+.bg-success { background-color: #10B981; }
+.bg-warning { background-color: #F59E0B; }
+.bg-error { background-color: #EF4444; }
+.bg-info { background-color: #3B82F6; }
+
+.bg-emerald { background-color: #50C878; }
+.bg-sapphire { background-color: #0F52BA; }
+.bg-ruby { background-color: #E0115F; }
+.bg-amber { background-color: #FFBF00; }
+
+.bg-teal { background-color: #008080; }
+.bg-indigo { background-color: #4B0082; }
+.bg-coral { background-color: #FF7F50; }
+.bg-mint { background-color: #98FB98; }
+
+/* Border Color Classes */
+.border-oxford-blue { border-color: #002147; }
+.border-oxford-blue-light { border-color: #334e68; }
+.border-oxford-blue-dark { border-color: #001122; }
+
+.border-academic-gold { border-color: #FFD700; }
+.border-antique-gold { border-color: #CD7F32; }
+
+.border-burgundy { border-color: #800020; }
+.border-forest-green { border-color: #228B22; }
+.border-royal-purple { border-color: #663399; }
+.border-crimson { border-color: #DC143C; }
+
+.border-charcoal { border-color: #36454F; }
+.border-slate { border-color: #708090; }
+.border-pearl { border-color: #F8F8FF; }
+.border-cream { border-color: #F5F5DC; }
+
+.border-success { border-color: #10B981; }
+.border-warning { border-color: #F59E0B; }
+.border-error { border-color: #EF4444; }
+.border-info { border-color: #3B82F6; }
+
+.border-emerald { border-color: #50C878; }
+.border-sapphire { border-color: #0F52BA; }
+.border-ruby { border-color: #E0115F; }
+.border-amber { border-color: #FFBF00; }
+
+.border-teal { border-color: #008080; }
+.border-indigo { border-color: #4B0082; }
+.border-coral { border-color: #FF7F50; }
+.border-mint { border-color: #98FB98; }
+
+
+/* Print Styles */
+@media print {
+  .nav-oxford {
+    display: none;
+  }
+  
+  .dashboard-oxford {
+    background: white !important;
+  }
+  
+  .card-oxford {
+    box-shadow: none !important;
+    border: 1px solid var(--oxford-300) !important;
+  }
+  
+}

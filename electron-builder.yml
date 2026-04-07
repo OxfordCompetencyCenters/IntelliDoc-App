@@ -1,0 +1,58 @@
+appId: com.aicc.intellidoc
+productName: AICC IntelliDoc
+copyright: Copyright (c) 2026 AICC
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - src/**/*
+  - package.json
+
+extraResources:
+  - from: resources/static-app
+    to: static-app
+    filter:
+      - "**/*"
+  - from: backend
+    to: backend
+    filter:
+      - "**/*.py"
+      - "**/*.txt"
+      - "**/*.json"
+      - "**/*.html"
+      - "**/*.css"
+      - "**/*.js"
+      - "**/*.env"
+      - ".env"
+      - "**/migrations/**"
+      - "**/templates/**"
+      - "**/static/**"
+      - "**/template_definitions/**"
+      - "!**/__pycache__/**"
+      - "!**/node_modules/**"
+      - "!**/.git/**"
+      - "!**/db.sqlite3"
+      - "!**/chromadb_data/**"
+      - "!**/.cache/**"
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+nsis:
+  oneClick: true
+  createDesktopShortcut: true
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Office

@@ -1,0 +1,29 @@
+{
+  "name": "aicc-intellidoc",
+  "version": "1.0.0",
+  "description": "AICC IntelliDoc - AI Document Analysis Desktop App",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n frontend,electron \"cd frontend/my-sveltekit-app && ELECTRON_DEV=1 npm run dev\" \"wait-on http://localhost:5173 && ELECTRON_DEV=1 electron .\"",
+    "build:frontend": "cd frontend/my-sveltekit-app && ADAPTER=static npm run build",
+    "build:copy": "rm -rf resources/static-app && cp -r frontend/my-sveltekit-app/build-static resources/static-app",
+    "build:electron": "electron-builder --config electron-builder.yml",
+    "build": "npm run build:frontend && npm run build:copy && npm run build:electron",
+    "pack": "npm run build:frontend && npm run build:copy && electron-builder --config electron-builder.yml --dir",
+    "dist:mac": "npm run build:frontend && npm run build:copy && electron-builder --mac",
+    "dist:win": "npm run build:frontend && npm run build:copy && electron-builder --win",
+    "dist:linux": "npm run build:frontend && npm run build:copy && electron-builder --linux"
+  },
+  "dependencies": {
+    "electron-store": "^10.0.0",
+    "express": "^4.21.0",
+    "http-proxy-middleware": "^3.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0",
+    "wait-on": "^8.0.0"
+  }
+}

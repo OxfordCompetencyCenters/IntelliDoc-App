@@ -1,0 +1,321 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd
+  namespace: ai-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+      - name: etcd
+        image: quay.io/coreos/etcd:v3.5.5
+        env:
+        - name: ETCD_AUTO_COMPACTION_MODE
+          value: "revision"
+        - name: ETCD_AUTO_COMPACTION_RETENTION
+          value: "1000"
+        - name: ETCD_QUOTA_BACKEND_BYTES
+          value: "4294967296"
+        - name: ETCD_SNAPSHOT_COUNT
+          value: "50000"
+        command:
+        - etcd
+        - -advertise-client-urls=http://127.0.0.1:2379
+        - -listen-client-urls=http://0.0.0.0:2379
+        - --data-dir=/etcd
+        ports:
+        - containerPort: 2379
+        volumeMounts:
+        - name: etcd-data
+          mountPath: /etcd
+        livenessProbe:
+          exec:
+            command:
+            - etcdctl
+            - endpoint
+            - health
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 20
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+      volumes:
+      - name: etcd-data
+        persistentVolumeClaim:
+          claimName: etcd-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: etcd
+  ports:
+  - protocol: TCP
+    port: 2379
+    targetPort: 2379
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: ai-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+        envFrom:
+        - configMapRef:
+            name: ai-catalogue-config
+        - secretRef:
+            name: ai-catalogue-secrets
+        command:
+        - minio
+        - server
+        - /minio_data
+        - --console-address
+        - ":9001"
+        ports:
+        - containerPort: 9000
+        - containerPort: 9001
+        volumeMounts:
+        - name: minio-data
+          mountPath: /minio_data
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 20
+          failureThreshold: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+      volumes:
+      - name: minio-data
+        persistentVolumeClaim:
+          claimName: minio-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: minio
+  ports:
+  - name: api
+    protocol: TCP
+    port: 9000
+    targetPort: 9000
+  - name: console
+    protocol: TCP
+    port: 9001
+    targetPort: 9001
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus
+  namespace: ai-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: milvus
+  template:
+    metadata:
+      labels:
+        app: milvus
+    spec:
+      initContainers:
+      - name: wait-for-etcd
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z etcd-service 2379; do
+            echo "Waiting for etcd..."
+            sleep 2
+          done
+      - name: wait-for-minio
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z minio-service 9000; do
+            echo "Waiting for minio..."
+            sleep 2
+          done
+      containers:
+      - name: milvus
+        image: milvusdb/milvus:v2.5.15
+        command:
+        - milvus
+        - run
+        - standalone
+        envFrom:
+        - configMapRef:
+            name: ai-catalogue-config
+        - secretRef:
+            name: ai-catalogue-secrets
+        env:
+        - name: ETCD_ENDPOINTS
+          value: "etcd-service:2379"
+        - name: MINIO_ADDRESS
+          value: "minio-service:9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-catalogue-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-catalogue-secrets
+              key: MINIO_SECRET_KEY
+        - name: COMMON_SECURITY_AUTHORIZATIONENABLED
+          value: "true"
+        - name: MILVUS_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: ai-catalogue-secrets
+              key: MILVUS_ROOT_USER
+        - name: MILVUS_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-catalogue-secrets
+              key: MILVUS_ROOT_PASSWORD
+        - name: COMMON_SECURITY_TLSMODE
+          value: "0"
+        ports:
+        - containerPort: 19530
+        - containerPort: 9091
+        volumeMounts:
+        - name: milvus-data
+          mountPath: /var/lib/milvus
+        - name: milvus-config-volume
+          mountPath: /etc/milvus/milvus.yaml
+          subPath: milvus.yaml
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9091
+          initialDelaySeconds: 300
+          periodSeconds: 45
+          timeoutSeconds: 30
+          failureThreshold: 15
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 9091
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          timeoutSeconds: 30
+          failureThreshold: 10
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: milvus-data
+        persistentVolumeClaim:
+          claimName: milvus-pvc
+      - name: milvus-config-volume
+        configMap:
+          name: milvus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: milvus-service
+  namespace: ai-catalogue
+spec:
+  selector:
+    app: milvus
+  ports:
+  - name: grpc
+    protocol: TCP
+    port: 19530
+    targetPort: 19530
+  - name: http
+    protocol: TCP
+    port: 9091
+    targetPort: 9091
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: etcd-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-pvc
+  namespace: ai-catalogue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: "${STORAGE_CLASS_NAME}"

@@ -1,0 +1,46 @@
+# Frontend Docker Ignore File
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+.svelte-kit/
+.vite_cache/
+
+# Cache
+.cache/
+.npm/
+.eslintcache
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+
+# Testing
+.nyc_output/
+
+# Temporary
+tmp/
+temp/
