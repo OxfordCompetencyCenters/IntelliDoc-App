@@ -93,7 +93,7 @@ const SPLASH_HTML = `<!DOCTYPE html>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-label"><span id="status">Initializing...</span><span id="percent">0%</span></div>
   </div>
-  <div class="footer">Desktop Edition</div>
+  <div class="footer">AI Competency Centre, University of Oxford</div>
 </body>
 </html>`;
 
@@ -522,14 +522,19 @@ function buildAppMenu() {
         { type: 'separator' },
         {
           label: 'About AICC IntelliDoc',
-          click: () => {
-            dialog.showMessageBox(mainWindow, {
+          click: async () => {
+            const result = await dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About AICC IntelliDoc',
               message: `AICC IntelliDoc v${app.getVersion()}`,
               detail:
-                'AI Document Analysis Desktop App\n\nPowered by Django, SvelteKit, and Electron.',
+                'AI Document Analysis Desktop App\n\nDeveloped by AI Competency Centre, University of Oxford\n\nDeveloper: Alok Kumar Sahu',
+              buttons: ['OK', 'Developer GitHub Profile'],
+              defaultId: 0,
             });
+            if (result.response === 1) {
+              shell.openExternal('https://github.com/alokkrsahu');
+            }
           },
         },
       ],
