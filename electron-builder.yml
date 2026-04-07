@@ -2,6 +2,11 @@ appId: com.aicc.intellidoc
 productName: AICC IntelliDoc
 copyright: Copyright (c) 2026 AICC
 
+publish:
+  provider: github
+  owner: OxfordCompetencyCenters
+  repo: IntelliDoc-App
+
 directories:
   output: dist
   buildResources: resources

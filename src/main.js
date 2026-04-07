@@ -284,34 +284,32 @@ function waitForUrl(url, { interval = 500, maxRetries = 60 } = {}) {
  * Kill any existing process listening on the given port.
  * Prevents "address already in use" when restarting the app.
  */
-function killProcessOnPort(port) {
-  try {
-    if (process.platform === 'win32') {
-      execSync(`for /f "tokens=5" %a in ('netstat -aon ^| findstr :${port}') do taskkill /F /PID %a`, { stdio: 'pipe', timeout: 5000 });
-    } else {
-      const pid = execSync(`lsof -ti :${port}`, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      if (pid) {
-        console.log(`Killing existing process on port ${port} (PID: ${pid})`);
-        process.kill(parseInt(pid), 'SIGKILL');
-      }
-    }
-  } catch {
-    // No process on port — fine
-  }
+/**
+ * Find a random available port. Eliminates all port conflicts.
+ */
+function getRandomPort() {
+  return new Promise((resolve, reject) => {
+    const server = require('net').createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
 }
 
 /**
- * Spawn the Django development server as a child process.
- * On POSIX systems, spawns with `detached: true` so we can kill the entire
- * process group on shutdown.
+ * Spawn Django on the given port. Returns { child, startupPromise }.
+ * startupPromise rejects early if Django crashes (port conflict, import error, etc.).
  */
 function spawnDjango(pythonCmd, djangoPort, backendDir) {
-  // Kill any stale Django on this port from a previous crashed session
-  killProcessOnPort(djangoPort);
   const managePy = path.join(backendDir, 'manage.py');
   const useDetached = process.platform !== 'win32';
 
   console.log(`Starting Django: ${pythonCmd} ${managePy} runserver 127.0.0.1:${djangoPort} --noreload`);
+
+  let startupReject = null;
+  const startupPromise = new Promise((_, reject) => { startupReject = reject; });
 
   const child = spawn(
     pythonCmd,
@@ -333,19 +331,32 @@ function spawnDjango(pythonCmd, djangoPort, backendDir) {
   });
 
   child.stderr.on('data', (data) => {
-    process.stderr.write(`[django] ${data}`);
+    const text = data.toString();
+    process.stderr.write(`[django] ${text}`);
+    // Detect fatal startup errors early
+    const fatal = ['Address already in use', 'SyntaxError', 'IndentationError',
+                   'ModuleNotFoundError', 'ImproperlyConfigured'].find(e => text.includes(e));
+    if (fatal && startupReject) {
+      startupReject(new Error(`Django startup failed: ${fatal}`));
+      startupReject = null; // Only reject once
+    }
   });
 
   child.on('error', (err) => {
     console.error('Failed to start Django process:', err.message);
+    if (startupReject) { startupReject(err); startupReject = null; }
   });
 
   child.on('exit', (code, signal) => {
     console.log(`Django process exited (code=${code}, signal=${signal})`);
+    if (code !== 0 && startupReject) {
+      startupReject(new Error(`Django exited with code ${code}`));
+      startupReject = null;
+    }
     djangoProcess = null;
   });
 
-  return child;
+  return { child, startupPromise };
 }
 
 /**
@@ -722,7 +733,9 @@ app.whenReady().then(async () => {
     splashWindow = createSplashWindow();
 
     const s = await getStore();
-    const djangoPort = s.get('djangoPort') || 8000;
+    // Use a random available port — eliminates all port conflicts
+    const djangoPort = await getRandomPort();
+    console.log(`Selected random port: ${djangoPort}`);
     let loadUrl;
 
     if (isDev) {
@@ -763,25 +776,26 @@ app.whenReady().then(async () => {
       updateSplash('Running database migrations...', 15);
       await runMigrations(pythonCmd, backendDir, dotEnvVars);
 
-      // Spawn Django
+      // Spawn Django on random port
       updateSplash('Starting backend server...', 25);
-      djangoProcess = spawnDjango(pythonCmd, djangoPort, backendDir);
+      const { child: djangoChild, startupPromise } = spawnDjango(pythonCmd, djangoPort, backendDir);
+      djangoProcess = djangoChild;
 
-      // Wait for Django to come up — update splash with counter and progress
+      // Wait for Django — race between health check and startup errors
       console.log(`Waiting for Django on http://127.0.0.1:${djangoPort}/api/ ...`);
       let waitSeconds = 0;
-      const maxExpectedSeconds = 45; // typical Django startup time
+      const maxExpectedSeconds = 45;
       const statusInterval = setInterval(() => {
         waitSeconds++;
-        // Progress: 25% (start) → 85% (django ready), scaled by elapsed/expected
         const pct = Math.min(85, 25 + Math.round((waitSeconds / maxExpectedSeconds) * 60));
         updateSplash(`Starting backend server... (${waitSeconds}s)`, pct);
       }, 1000);
 
-      await waitForUrl(`http://127.0.0.1:${djangoPort}/api/`, {
-        interval: 500,
-        maxRetries: 240,
-      });
+      // Race: either Django becomes ready OR it crashes with a fatal error
+      await Promise.race([
+        waitForUrl(`http://127.0.0.1:${djangoPort}/api/`, { interval: 500, maxRetries: 240 }),
+        startupPromise, // Rejects immediately on fatal Django errors
+      ]);
       clearInterval(statusInterval);
       console.log('Django is ready.');
 
