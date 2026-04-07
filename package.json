@@ -3,6 +3,10 @@
   "version": "1.2.0",
   "description": "AICC IntelliDoc - AI Document Analysis Desktop App",
   "main": "src/main.js",
+  "author": {
+    "name": "AI Competency Centre, University of Oxford",
+    "email": "alok.sahu@it.ox.ac.uk"
+  },
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n frontend,electron \"cd frontend/my-sveltekit-app && ELECTRON_DEV=1 npm run dev\" \"wait-on http://localhost:5173 && ELECTRON_DEV=1 electron .\"",
