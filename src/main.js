@@ -1018,6 +1018,28 @@ app.whenReady().then(async () => {
     splashWindow = createSplashWindow();
 
     const s = await getStore();
+
+    // Clear web caches on version change to prevent stale JS/CSS after updates
+    const currentVersion = app.getVersion();
+    const lastVersion = s.get('lastAppVersion');
+    if (lastVersion && lastVersion !== currentVersion) {
+      console.log(`Version changed: ${lastVersion} → ${currentVersion} — clearing web caches`);
+      const userDataPath = app.getPath('userData');
+      const cacheDirs = ['Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache'];
+      for (const dir of cacheDirs) {
+        const dirPath = path.join(userDataPath, dir);
+        try {
+          if (fs.existsSync(dirPath)) {
+            fs.rmSync(dirPath, { recursive: true, force: true });
+            console.log(`  Cleared ${dir}`);
+          }
+        } catch (err) {
+          console.warn(`  Failed to clear ${dir}:`, err.message);
+        }
+      }
+    }
+    s.set('lastAppVersion', currentVersion);
+
     // Use a random available port — eliminates all port conflicts
     const djangoPort = await getRandomPort();
     console.log(`Selected random port: ${djangoPort}`);
