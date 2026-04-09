@@ -562,17 +562,66 @@ function killDjango() {
 }
 
 /**
- * Check if Docker is available on the system.
+ * Check if Docker is available. If Docker Desktop is installed but not running,
+ * try to launch it and wait for the daemon to become ready.
+ * Returns true if Docker is ready, false if unavailable.
  */
-function checkDocker() {
+async function ensureDocker() {
+  // Quick check — is Docker daemon already running?
   try {
-    execSync('docker info', { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
-    console.log('Docker is available');
+    execSync('docker info', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    console.log('Docker daemon is already running');
     return true;
   } catch {
-    console.warn('Docker not available - Ollama (local AI) will be unavailable');
+    // Docker daemon not running — try to start it
+  }
+
+  // Check if docker CLI exists at all
+  try {
+    execSync('which docker', { encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch {
+    console.warn('Docker not installed — Ollama (local AI) will be unavailable');
     return false;
   }
+
+  // Try to launch Docker Desktop
+  console.log('Docker daemon not running — attempting to start Docker Desktop...');
+  updateSplash('Starting Docker...', 86);
+
+  try {
+    if (process.platform === 'darwin') {
+      // macOS: open Docker.app
+      execSync('open -a Docker', { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
+    } else if (process.platform === 'win32') {
+      // Windows: start Docker Desktop
+      spawn('cmd', ['/c', 'start', '', 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'], { detached: true, stdio: 'ignore' });
+    } else {
+      // Linux: try systemctl
+      execSync('systemctl start docker', { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
+    }
+  } catch (err) {
+    console.warn('Failed to launch Docker Desktop:', err.message);
+    return false;
+  }
+
+  // Wait for Docker daemon to become ready (up to 45 seconds)
+  const maxWait = 45;
+  for (let i = 0; i < maxWait; i++) {
+    try {
+      execSync('docker info', { encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
+      console.log(`Docker daemon ready after ${i + 1}s`);
+      return true;
+    } catch {
+      // Still starting up
+      if (i % 5 === 0) {
+        updateSplash(`Starting Docker... (${i}s)`, 86);
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  console.warn(`Docker daemon did not start within ${maxWait}s`);
+  return false;
 }
 
 /**
@@ -997,15 +1046,16 @@ app.whenReady().then(async () => {
       clearInterval(statusInterval);
       console.log('Django is ready.');
 
-      // Start Ollama Docker container (non-blocking — app works without it)
-      if (checkDocker()) {
+      // Start Docker (if needed) and Ollama container
+      const dockerReady = await ensureDocker();
+      if (dockerReady) {
         updateSplash('Starting local AI engine...', 88);
         ollamaRunning = await startOllamaContainer();
         if (!ollamaRunning) {
           console.warn('Ollama container failed to start - local AI unavailable');
         }
       } else {
-        console.log('Docker not found - skipping Ollama');
+        console.log('Docker not available - skipping Ollama');
       }
 
       // Start Express proxy
