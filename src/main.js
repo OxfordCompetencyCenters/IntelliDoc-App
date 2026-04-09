@@ -562,41 +562,96 @@ function killDjango() {
 }
 
 /**
- * Check if Docker is available. If Docker Desktop is installed but not running,
- * try to launch it and wait for the daemon to become ready.
- * Returns true if Docker is ready, false if unavailable.
+ * Check if Docker Desktop is installed (not just the CLI).
+ */
+function isDockerDesktopInstalled() {
+  if (process.platform === 'darwin') {
+    return fs.existsSync('/Applications/Docker.app');
+  } else if (process.platform === 'win32') {
+    return (
+      fs.existsSync('C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe') ||
+      fs.existsSync(path.join(process.env.LOCALAPPDATA || '', 'Docker', 'Docker Desktop.exe'))
+    );
+  }
+  // Linux: check if docker CLI exists (daemon runs as a service)
+  try {
+    execSync('which docker', { timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensure Docker is available. Handles three scenarios:
+ *   1. Docker running       → return true immediately
+ *   2. Docker installed      → auto-launch and wait
+ *   3. Docker not installed  → prompt user to install, then retry
+ * Returns true if Docker is ready, false if user skipped or install failed.
  */
 async function ensureDocker() {
-  // Quick check — is Docker daemon already running?
+  // ── Scenario 1: Docker daemon already running ──
   try {
     execSync('docker info', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
     console.log('Docker daemon is already running');
     return true;
   } catch {
-    // Docker daemon not running — try to start it
+    // Not running — continue
   }
 
-  // Check if docker CLI exists at all
-  try {
-    execSync('which docker', { encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch {
-    console.warn('Docker not installed — Ollama (local AI) will be unavailable');
+  // ── Scenario 3: Docker not installed at all ──
+  if (!isDockerDesktopInstalled()) {
+    console.log('Docker Desktop not installed — prompting user');
+    const downloadUrls = {
+      darwin: 'https://www.docker.com/products/docker-desktop/',
+      win32: 'https://www.docker.com/products/docker-desktop/',
+      linux: 'https://docs.docker.com/engine/install/',
+    };
+    const result = await dialog.showMessageBox(mainWindow || splashWindow, {
+      type: 'info',
+      title: 'Docker Required for Local AI',
+      message: 'Docker Desktop is needed for Ollama (local AI models).',
+      detail:
+        'AICC IntelliDoc uses Docker to run Ollama, which provides local AI models ' +
+        'that work without internet or API keys.\n\n' +
+        'Without Docker, you can still use cloud AI providers (OpenAI, Anthropic, Google) ' +
+        'if you configure API keys.\n\n' +
+        'Would you like to download Docker Desktop now?',
+      buttons: ['Download Docker', 'Skip for now'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+
+    if (result.response === 0) {
+      shell.openExternal(downloadUrls[process.platform] || downloadUrls.linux);
+      // Show a follow-up dialog telling user to restart the app after installing
+      await dialog.showMessageBox(mainWindow || splashWindow, {
+        type: 'info',
+        title: 'Install Docker Desktop',
+        message: 'After installing Docker Desktop, restart AICC IntelliDoc.',
+        detail:
+          'Docker Desktop is downloading in your browser.\n\n' +
+          '1. Install Docker Desktop\n' +
+          '2. Launch Docker Desktop once to complete setup\n' +
+          '3. Restart AICC IntelliDoc — Ollama will start automatically',
+        buttons: ['OK'],
+      });
+    }
     return false;
   }
 
-  // Try to launch Docker Desktop
-  console.log('Docker daemon not running — attempting to start Docker Desktop...');
+  // ── Scenario 2: Docker installed but daemon not running — auto-launch ──
+  console.log('Docker daemon not running — launching Docker Desktop...');
   updateSplash('Starting Docker...', 86);
 
   try {
     if (process.platform === 'darwin') {
-      // macOS: open Docker.app
       execSync('open -a Docker', { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
     } else if (process.platform === 'win32') {
-      // Windows: start Docker Desktop
-      spawn('cmd', ['/c', 'start', '', 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'], { detached: true, stdio: 'ignore' });
+      spawn('cmd', ['/c', 'start', '', 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'], {
+        detached: true, stdio: 'ignore',
+      });
     } else {
-      // Linux: try systemctl
       execSync('systemctl start docker', { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
     }
   } catch (err) {
@@ -604,15 +659,14 @@ async function ensureDocker() {
     return false;
   }
 
-  // Wait for Docker daemon to become ready (up to 45 seconds)
-  const maxWait = 45;
+  // Wait for Docker daemon to become ready (up to 60 seconds)
+  const maxWait = 60;
   for (let i = 0; i < maxWait; i++) {
     try {
       execSync('docker info', { encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
       console.log(`Docker daemon ready after ${i + 1}s`);
       return true;
     } catch {
-      // Still starting up
       if (i % 5 === 0) {
         updateSplash(`Starting Docker... (${i}s)`, 86);
       }
