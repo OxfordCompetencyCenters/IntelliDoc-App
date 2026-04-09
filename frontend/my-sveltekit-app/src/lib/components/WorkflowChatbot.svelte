@@ -397,9 +397,45 @@
         nums.split(',').map((n: string) => `<span class="cite-chip" data-ref="${n.trim()}">${n.trim()}</span>`).join(''))
       .replace(/^[\*\-]\s+(.+)$/gm, '<li>$1</li>')
       .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
-      .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul class="chat-list">$1</ul>')
-      .replace(/\n/g, '<br>');
-    html = html.replace(/<\/(h4|ul|pre|li)><br>/g, '</$1>').replace(/<br><(h4|ul|pre)/g, '<$1');
+      .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul class="chat-list">$1</ul>');
+
+    // ── Table rendering ──
+    // Detect markdown tables (lines starting with |) and convert to <table>
+    const lines = html.split('\n');
+    const processed: string[] = [];
+    let tableRows: string[] = [];
+
+    function flushTable() {
+      if (tableRows.length === 0) return;
+      let thtml = '<table class="chat-table">';
+      let isFirst = true;
+      for (const row of tableRows) {
+        // Skip separator rows (| --- | --- | or | :--- | :--- |)
+        if (/^\|[\s\-:]+\|/.test(row) && !/[a-zA-Z0-9]/.test(row.replace(/[\|\-:\s]/g, ''))) continue;
+        const cells = row.split('|').filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim());
+        if (cells.length === 0) continue;
+        const tag = isFirst ? 'th' : 'td';
+        thtml += '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+        if (isFirst) isFirst = false;
+      }
+      thtml += '</table>';
+      processed.push(thtml);
+      tableRows = [];
+    }
+
+    for (const line of lines) {
+      if (line.trimStart().startsWith('|') && line.trimEnd().endsWith('|')) {
+        tableRows.push(line);
+      } else {
+        flushTable();
+        processed.push(line);
+      }
+    }
+    flushTable();
+    html = processed.join('\n');
+
+    html = html.replace(/\n/g, '<br>');
+    html = html.replace(/<\/(h4|ul|pre|li|table)><br>/g, '</$1>').replace(/<br><(h4|ul|pre|table)/g, '<$1');
     return html;
   }
 
@@ -641,16 +677,32 @@
   }
   :global(.chat-markdown code.chat-inline-code) { background: #f1f5f9; border-radius: 3px; padding: 1px 4px; font-size: 0.85em; }
 
+  /* ── Tables ─────────────────────────────────────────────── */
+  :global(.chat-markdown .chat-table) {
+    width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8rem;
+  }
+  :global(.chat-markdown .chat-table th) {
+    background: #f1f5f9; font-weight: 600; color: #1e293b;
+    padding: 6px 10px; border: 1px solid #e2e8f0; text-align: left;
+  }
+  :global(.chat-markdown .chat-table td) {
+    padding: 5px 10px; border: 1px solid #e2e8f0; color: #475569;
+  }
+  :global(.chat-markdown .chat-table tr:nth-child(even) td) {
+    background: #f8fafc;
+  }
+
   /* ── Citation Chips ─────────────────────────────────────── */
   :global(.cite-chip) {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 20px; height: 20px; padding: 0 5px;
-    border-radius: 10px; background: #002147; color: white;
-    font-size: 11px; font-weight: 700; cursor: pointer;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px; background: #2563eb; color: white;
+    font-size: 10px; font-weight: 700; cursor: pointer;
     vertical-align: super; margin: 0 2px; line-height: 1;
-    transition: all 0.15s; box-shadow: 0 1px 3px rgba(0,33,71,0.3);
+    transition: all 0.15s; box-shadow: 0 1px 2px rgba(37,99,235,0.3);
+    text-decoration: none;
   }
-  :global(.cite-chip:hover) { background: #1a3a5c; transform: scale(1.15); box-shadow: 0 2px 6px rgba(0,33,71,0.4); }
+  :global(.cite-chip:hover) { background: #1d4ed8; transform: scale(1.12); box-shadow: 0 2px 6px rgba(37,99,235,0.4); }
   :global(.cite-chip-secondary) { background: #e5e7eb; color: #374151; cursor: default; }
   :global(.cite-chip-secondary:hover) { filter: none; }
 
