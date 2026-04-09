@@ -644,13 +644,13 @@
   /* ── Citation Chips ─────────────────────────────────────── */
   :global(.cite-chip) {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 18px; height: 18px; padding: 0 4px;
-    border-radius: 4px; background: #0ea5e9; color: white;
-    font-size: 11px; font-weight: 600; cursor: pointer;
-    vertical-align: super; margin: 0 1px; line-height: 1;
-    transition: filter 0.15s;
+    min-width: 20px; height: 20px; padding: 0 5px;
+    border-radius: 10px; background: #002147; color: white;
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    vertical-align: super; margin: 0 2px; line-height: 1;
+    transition: all 0.15s; box-shadow: 0 1px 3px rgba(0,33,71,0.3);
   }
-  :global(.cite-chip:hover) { filter: brightness(0.85); }
+  :global(.cite-chip:hover) { background: #1a3a5c; transform: scale(1.15); box-shadow: 0 2px 6px rgba(0,33,71,0.4); }
   :global(.cite-chip-secondary) { background: #e5e7eb; color: #374151; cursor: default; }
   :global(.cite-chip-secondary:hover) { filter: none; }
 
