@@ -2208,6 +2208,7 @@ class WorkflowExecutor:
                 "- You may reuse the same [N] only when the same passage supports multiple "
                 "nearby clauses; otherwise increment N.\n"
                 "- Reference documents by their title (not tool name or filename).\n"
+                "- IMPORTANT: Include the \"tool_name\" field in each citation so we can link to the document.\n"
                 + (
                     "- For citations from web search results, include the source "
                     "\"url\" field and set \"source\": \"web\". For citations from "
@@ -2219,10 +2220,10 @@ class WorkflowExecutor:
                 "---CITATIONS---\n"
                 + (
                     '[{"ref": 1, "document_title": "Page Title", "quoted_text": "excerpt from web page…", "url": "https://example.com/article", "source": "web"}, '
-                    '{"ref": 2, "document_title": "Paper A", "quoted_text": "exact excerpt from document…", "page": 2, "section": "Intro", "source": "document"}]\n'
+                    '{"ref": 2, "document_title": "Paper A", "tool_name": "read_doc_paper_a_pdf", "quoted_text": "exact excerpt from document…", "page": 2, "section": "Intro", "source": "document"}]\n'
                     if has_web_tools else
-                    '[{"ref": 1, "document_title": "Paper A", "quoted_text": "first exact excerpt…", "page": 2, "section": "Intro"}, '
-                    '{"ref": 2, "document_title": "Paper A", "quoted_text": "different excerpt for claim two…", "page": 4, "section": "Methods"}]\n'
+                    '[{"ref": 1, "document_title": "Paper A", "tool_name": "read_doc_paper_a_pdf", "quoted_text": "first exact excerpt…", "page": 2, "section": "Intro"}, '
+                    '{"ref": 2, "document_title": "Paper A", "tool_name": "read_doc_paper_a_pdf", "quoted_text": "different excerpt for claim two…", "page": 4, "section": "Methods"}]\n'
                 ) +
                 "---END_CITATIONS---"
                 f"{title_ref_section}"
@@ -2380,10 +2381,41 @@ class WorkflowExecutor:
                 for _new_num in range(1, len(_ordered_refs) + 1):
                     clean_text = clean_text.replace(f"[__CITE_{_new_num}__]", f"[{_new_num}]")
 
+                # Build a reverse lookup: lowercase title/filename → document_id
+                _fuzzy_docid: Dict[str, str] = {}
+                for _title, _did in title_to_docid.items():
+                    _fuzzy_docid[_title.lower()] = _did
+                    _base = _title.rsplit('.', 1)[0] if '.' in _title else _title
+                    _fuzzy_docid[_base.lower()] = _did
+                # Also map tool_name → document_id directly
+                for _tn, _did in tool_map.items():
+                    if _tn not in _info_tool_names:
+                        _fuzzy_docid[title_map.get(_tn, '').lower()] = _did
+
                 for _cit in _new_citations:
-                    _dt = _cit.get("document_title", "")
-                    if _dt and _dt in title_to_docid and not _cit.get("url"):
-                        _cit["document_id"] = title_to_docid[_dt]
+                    if _cit.get("document_id") or _cit.get("url"):
+                        continue
+                    # Priority 1: LLM included tool_name → direct lookup
+                    _tn_from_cit = (_cit.get("tool_name") or "").strip()
+                    if _tn_from_cit and _tn_from_cit in tool_map:
+                        _cit["document_id"] = tool_map[_tn_from_cit]
+                        # Also fix document_title to use the proper title
+                        _cit["document_title"] = title_map.get(_tn_from_cit, _cit.get("document_title", ""))
+                        continue
+                    # Priority 2: Exact match on document_title
+                    _dt = (_cit.get("document_title") or "").strip()
+                    if not _dt:
+                        continue
+                    _matched_id = title_to_docid.get(_dt) or _fuzzy_docid.get(_dt.lower())
+                    # Priority 3: Substring match
+                    if not _matched_id:
+                        _dt_lower = _dt.lower()
+                        for _known, _did in _fuzzy_docid.items():
+                            if _known in _dt_lower or _dt_lower in _known:
+                                _matched_id = _did
+                                break
+                    if _matched_id:
+                        _cit["document_id"] = _matched_id
 
                 if _ordered_refs:
                     logger.info(
