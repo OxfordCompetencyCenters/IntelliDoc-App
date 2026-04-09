@@ -52,6 +52,7 @@
   let sending = false;
   let loading = true;
   let messagesContainer: HTMLDivElement;
+  let textareaEl: HTMLTextAreaElement;
   let renamingId: string | null = null;
   let renameValue = '';
   let fullscreen = false;
@@ -158,6 +159,7 @@
     const text = messageInput.trim();
     messageInput = '';
     sending = true;
+    if (textareaEl) textareaEl.style.height = '38px';
 
     // Reset activity + tooltip state
     activityItems = [];
@@ -298,6 +300,12 @@
 
   function scrollToBottom() {
     setTimeout(() => { if (messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 50);
+  }
+
+  function autoResizeTextarea() {
+    if (!textareaEl) return;
+    textareaEl.style.height = 'auto';
+    textareaEl.style.height = Math.min(textareaEl.scrollHeight, 128) + 'px'; // max ~4 lines
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -620,11 +628,12 @@
       <!-- Input -->
       <div class="px-3 py-2 border-t border-gray-200 bg-white">
         <div class="flex gap-2 items-end">
-          <textarea bind:value={messageInput} on:keydown={handleKeydown}
+          <textarea bind:this={textareaEl} bind:value={messageInput}
+            on:keydown={handleKeydown} on:input={autoResizeTextarea}
             placeholder={activeSessionId ? 'Type a message... (Enter to send)' : 'Create a chat first'}
             disabled={!activeSessionId || sending} rows="1"
-            class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-xl resize-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500/20 disabled:bg-gray-50 disabled:text-gray-400 max-h-28"
-            style="min-height: 38px;"></textarea>
+            class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-xl resize-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500/20 disabled:bg-gray-50 disabled:text-gray-400"
+            style="min-height: 38px; max-height: 128px; overflow-y: auto;"></textarea>
           <button on:click={sendMessage} disabled={!activeSessionId || !messageInput.trim() || sending}
             style="background-color: #002147;" class="px-3 py-2 text-white rounded-xl hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity shrink-0">
             {#if sending}<i class="fas fa-spinner fa-spin text-sm"></i>{:else}<i class="fas fa-paper-plane text-sm"></i>{/if}
