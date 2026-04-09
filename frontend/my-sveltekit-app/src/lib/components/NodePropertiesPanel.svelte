@@ -593,11 +593,18 @@
     }
 
     const entry = documentLlmStatus[filename];
-    if (!entry) return null;
+    if (!entry) {
+      // Desktop app: no File API status tracking — documents are processed locally
+      // and uploaded on-the-fly when needed. Treat as ready.
+      return { status: 'ready' };
+    }
 
     const key = provider === 'gemini' ? 'google' : provider;
     const statusObj = entry[key];
-    if (!statusObj) return null;
+    if (!statusObj) {
+      // Provider not tracked yet — will be uploaded on first use
+      return { status: 'ready' };
+    }
     return statusObj;
   }
 
