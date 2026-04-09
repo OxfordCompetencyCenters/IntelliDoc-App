@@ -439,7 +439,8 @@ def chatbot_send_message_stream(request, project_id, session_id):
                 event_queue.put(('chunk', {'content': chunk}))
 
             def _event_cb(event_type, data):
-                event_queue.put(('status', {'phase': event_type, **data}))
+                # Forward the native event type directly (planning, tool_result, synthesizing, etc.)
+                event_queue.put((event_type, data))
 
             async def _execute():
                 return await orchestrator.execute_workflow(
@@ -475,10 +476,12 @@ def chatbot_send_message_stream(request, project_id, session_id):
 
             if event_type == 'chunk':
                 streamed_any_chunk = True
-                yield _sse_event('chunk', data)
+                yield _sse_event('content', data)
 
-            elif event_type == 'status':
-                yield _sse_event('status', data)
+            elif event_type in ('planning', 'delegate_start', 'delegate_plan',
+                                'tool_result', 'delegate_done', 'synthesizing'):
+                # Forward intermediate events with their native type
+                yield _sse_event(event_type, data)
 
             elif event_type == 'error':
                 yield _sse_event('error', {'error': data})
@@ -489,17 +492,42 @@ def chatbot_send_message_stream(request, project_id, session_id):
                 workflow.graph_json = original_graph
                 elapsed_ms = int((time.time() - start_time) * 1000)
 
-                # Extract response and citations (same logic as non-streaming)
+                # Extract response and citations
                 assistant_response = _extract_response(result, graph)
                 assistant_response = _clean_response(assistant_response)
                 citations_list = _extract_citations(result)
 
-                # If we didn't stream chunks, send the full response as chunks now
+                # Parse and strip ---CITATIONS--- block from response before streaming
+                import re as _re
+                _cit_match = _re.search(
+                    r'---CITATIONS---\s*([\s\S]*?)\s*---END_?CITATIONS---',
+                    assistant_response,
+                )
+                parsed_cit_json = None
+                if _cit_match:
+                    try:
+                        parsed_cit_json = json.loads(_cit_match.group(1))
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    assistant_response = assistant_response[:_cit_match.start()].rstrip()
+                # Strip trailing "CITATIONS" header some models leave
+                assistant_response = _re.sub(r'\n*CITATIONS\s*$', '', assistant_response).rstrip()
+
+                # Merge parsed citations with extracted ones
+                if not citations_list and parsed_cit_json and isinstance(parsed_cit_json, list):
+                    citations_list = parsed_cit_json
+
+                # Stream response word-by-word (if not already streamed by Ollama)
                 if not streamed_any_chunk and assistant_response:
-                    # Send in small pieces for a typed-out effect
-                    _chunk_size = 4
-                    for i in range(0, len(assistant_response), _chunk_size):
-                        yield _sse_event('chunk', {'content': assistant_response[i:i+_chunk_size]})
+                    words = assistant_response.split(' ')
+                    for i, word in enumerate(words):
+                        content = word + (' ' if i < len(words) - 1 else '')
+                        yield _sse_event('content', {'content': content})
+                        time.sleep(0.02)  # 20ms for smooth streaming
+
+                # Send citations as separate event
+                if citations_list:
+                    yield _sse_event('citations', {'citations': citations_list})
 
                 # Persist conversation
                 assistant_entry = {

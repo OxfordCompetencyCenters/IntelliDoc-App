@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { toasts } from '$lib/stores/toast';
 
   export let projectId: string;
@@ -12,6 +12,8 @@
     page?: string | number;
     section?: string;
     document_id?: string;
+    url?: string;
+    source?: string;
   }
 
   interface ChatMessage {
@@ -32,6 +34,15 @@
     updated_at: string;
   }
 
+  interface ActivityItem {
+    type: string;
+    agent?: string;
+    content?: string;
+    tool?: string;
+    chars?: number;
+    tasks?: string[];
+  }
+
   let sessions: ChatSession[] = [];
   let activeSessionId: string | null = null;
   let messages: ChatMessage[] = [];
@@ -44,10 +55,27 @@
   let renamingId: string | null = null;
   let renameValue = '';
   let fullscreen = false;
-  let activeCitation: Citation | null = null;
   let sidebarOpen = true;
 
+  // Activity panel state
+  let activityItems: ActivityItem[] = [];
+  let showActivityPanel = false;
+  let activityCollapsed = false;
+  let activityElapsedText = '';
+  let activityStartTime: number | null = null;
+  let expandedActivityIdx: number | null = null;
+
+  // Citation tooltip state
+  let tooltipCitation: Citation | null = null;
+  let tooltipPosition: { left: number; top: number } | null = null;
+  let tooltipRef: number | null = null;
+
   const API = `/api/chatbot/${projectId}`;
+
+  const ACTIVITY_ICONS: Record<string, string> = {
+    planning: '\u{1F4CB}', delegate_start: '\u{1F91D}', delegate_plan: '\u{1F4DD}',
+    tool_result: '\u{1F50D}', delegate_done: '\u2705', synthesizing: '\u2699\uFE0F',
+  };
 
   onMount(async () => {
     await Promise.all([loadSessions(), loadWorkflows()]);
@@ -125,18 +153,25 @@
     renamingId = null;
   }
 
-  let streamingStatus = '';
-
   async function sendMessage() {
     if (!messageInput.trim() || !activeSessionId || sending) return;
     const text = messageInput.trim();
     messageInput = '';
     sending = true;
-    streamingStatus = '';
+
+    // Reset activity + tooltip state
+    activityItems = [];
+    showActivityPanel = false;
+    activityCollapsed = false;
+    activityElapsedText = '';
+    activityStartTime = null;
+    expandedActivityIdx = null;
+    tooltipCitation = null;
+
     messages = [...messages, { role: 'user', content: text, timestamp: new Date().toISOString() }];
     scrollToBottom();
 
-    // Add a placeholder assistant message for streaming
+    // Add placeholder assistant message
     const assistantIdx = messages.length;
     messages = [...messages, { role: 'assistant', content: '', timestamp: new Date().toISOString() }];
     scrollToBottom();
@@ -149,13 +184,11 @@
       });
 
       if (!resp.ok || !resp.body) {
-        // Fallback to non-streaming
         const data = await resp.json();
         messages[assistantIdx] = {
           ...messages[assistantIdx],
           content: data.error ? `Error: ${data.error}` : (data.response || 'No response'),
-          elapsed_ms: data.elapsed_ms,
-          citations: data.citations || [],
+          elapsed_ms: data.elapsed_ms, citations: data.citations || [],
         };
         messages = [...messages];
         return;
@@ -165,14 +198,14 @@
       const decoder = new TextDecoder();
       let buffer = '';
       let streamedContent = '';
+      let contentStarted = false;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE format: "event: type\ndata: json\n\n"
-        // Process complete events (separated by double newline)
         while (buffer.includes('\n\n')) {
           const eventEnd = buffer.indexOf('\n\n');
           const eventBlock = buffer.slice(0, eventEnd);
@@ -189,24 +222,50 @@
           try {
             const data = JSON.parse(eventData);
 
-            if (eventType === 'chunk') {
+            // Intermediate events → activity panel
+            if (['planning', 'delegate_start', 'delegate_plan', 'tool_result', 'delegate_done', 'synthesizing'].includes(eventType)) {
+              if (!showActivityPanel) {
+                showActivityPanel = true;
+                activityStartTime = Date.now();
+              }
+              activityItems = [...activityItems, { type: eventType, ...data }];
+              scrollToBottom();
+
+            // Content streaming (word-by-word or real Ollama chunks)
+            } else if (eventType === 'content' || eventType === 'chunk') {
+              if (!contentStarted) {
+                contentStarted = true;
+                // Collapse activity panel when content starts
+                if (showActivityPanel) {
+                  const elapsed = activityStartTime ? Math.round((Date.now() - activityStartTime) / 1000) : 0;
+                  activityElapsedText = `Processed in ${elapsed}s \u2014 click to expand`;
+                  activityCollapsed = true;
+                }
+              }
               streamedContent += data.content || '';
               messages[assistantIdx] = { ...messages[assistantIdx], content: streamedContent };
               messages = [...messages];
               scrollToBottom();
-            } else if (eventType === 'status') {
-              const phase = data.phase || '';
-              if (phase === 'planning') streamingStatus = 'Planning...';
-              else if (phase === 'tool_result') streamingStatus = 'Analyzing documents...';
-              else if (phase === 'synthesizing') streamingStatus = 'Generating response...';
-              else streamingStatus = phase;
+
+            // Citations as separate event
+            } else if (eventType === 'citations') {
+              if (Array.isArray(data.citations) && data.citations.length > 0) {
+                messages[assistantIdx] = { ...messages[assistantIdx], citations: data.citations };
+                messages = [...messages];
+              }
+
+            // Done — finalize
             } else if (eventType === 'done') {
-              streamingStatus = '';
+              if (showActivityPanel && !activityCollapsed) {
+                const elapsed = activityStartTime ? Math.round((Date.now() - activityStartTime) / 1000) : 0;
+                activityElapsedText = `Processed in ${elapsed}s \u2014 click to expand`;
+                activityCollapsed = true;
+              }
               messages[assistantIdx] = {
                 ...messages[assistantIdx],
                 content: data.response || streamedContent,
                 elapsed_ms: data.elapsed_ms,
-                citations: data.citations || [],
+                citations: data.citations || messages[assistantIdx].citations || [],
               };
               messages = [...messages];
               sessions = sessions.map(s => {
@@ -220,8 +279,8 @@
                   updated_at: new Date().toISOString(),
                 };
               });
+
             } else if (eventType === 'error') {
-              streamingStatus = '';
               messages[assistantIdx] = { ...messages[assistantIdx], content: `Error: ${data.error}` };
               messages = [...messages];
             }
@@ -229,14 +288,10 @@
         }
       }
     } catch (err: any) {
-      messages[assistantIdx] = {
-        ...messages[assistantIdx],
-        content: `Error: ${err.message}`,
-      };
+      messages[assistantIdx] = { ...messages[assistantIdx], content: `Error: ${err.message}` };
       messages = [...messages];
     } finally {
       sending = false;
-      streamingStatus = '';
       scrollToBottom();
     }
   }
@@ -247,28 +302,82 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    if (e.key === 'Escape' && fullscreen) { fullscreen = false; }
+    if (e.key === 'Escape') {
+      if (tooltipCitation) { tooltipCitation = null; return; }
+      if (fullscreen) { fullscreen = false; }
+    }
     if (e.key === 'f' && !sending && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
       fullscreen = !fullscreen;
     }
   }
 
+  // Citation tooltip handling
   function handleCitationClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
-    if (target.classList.contains('chat-cite') && target.dataset.ref) {
-      const refNum = parseInt(target.dataset.ref);
+    const chip = target.closest('.cite-chip') as HTMLElement | null;
+    if (chip && chip.dataset.ref) {
+      e.stopPropagation();
+      const refNum = parseInt(chip.dataset.ref);
+      // Toggle if same chip
+      if (tooltipRef === refNum && tooltipCitation) {
+        tooltipCitation = null; tooltipRef = null; tooltipPosition = null;
+        return;
+      }
+      // Find citation from messages
       const allCitations: Citation[] = [];
       for (const msg of [...messages].reverse()) {
         if (msg.role === 'assistant' && msg.citations?.length) allCitations.push(...msg.citations);
       }
       const cite = allCitations.find(c => c.ref === refNum);
-      activeCitation = cite || { ref: refNum, document_title: `Source [${refNum}]`,
-        quoted_text: 'Citation details not available for this message. Send a new question to get source details.' };
+      if (cite) {
+        const rect = chip.getBoundingClientRect();
+        tooltipPosition = { left: Math.min(rect.left, window.innerWidth - 360), top: rect.bottom + 6 };
+        tooltipCitation = cite;
+        tooltipRef = refNum;
+      }
+    } else if (!target.closest('.cite-tooltip')) {
+      tooltipCitation = null; tooltipRef = null; tooltipPosition = null;
     }
+  }
+
+  function openCitationDocument(documentId: string | undefined) {
+    if (!projectId || !documentId) return;
+    fetch(`/api/projects/${projectId}/documents/${documentId}/download/`)
+      .then(resp => { if (!resp.ok) throw new Error('HTTP ' + resp.status); return resp.blob(); })
+      .then(blob => {
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      })
+      .catch(err => console.error('Citation doc open failed:', err));
+  }
+
+  function getActivityDesc(item: ActivityItem): string {
+    switch (item.type) {
+      case 'planning': return `<b>${item.agent || ''}</b> created a plan`;
+      case 'delegate_start': return `<b>${item.agent || ''}</b> started \u2014 ${Array.isArray(item.tasks) ? item.tasks.length + ' task(s)' : ''}`;
+      case 'delegate_plan': return `<b>${item.agent || ''}</b> created its plan`;
+      case 'tool_result': return `<b>${item.agent || ''}</b> queried <i>${item.tool || ''}</i> (${item.chars || 0} chars)`;
+      case 'delegate_done': return `<b>${item.agent || ''}</b> finished (${item.chars || 0} chars)`;
+      case 'synthesizing': return `<b>${item.agent || ''}</b> is synthesizing the final answer`;
+      default: return item.type;
+    }
+  }
+
+  function getActivityDetail(item: ActivityItem): string {
+    if ((item.type === 'planning' || item.type === 'delegate_plan') && item.content) return item.content;
+    if (item.type === 'delegate_start' && Array.isArray(item.tasks) && item.tasks.length)
+      return item.tasks.map((t, i) => `${i + 1}. ${t}`).join('\n');
+    if (item.type === 'tool_result' && item.content) return item.content;
+    return '';
   }
 
   function renderMarkdown(text: string): string {
     if (!text) return '';
+    // Safety: strip ---CITATIONS--- block if backend missed it
+    text = text.replace(/---CITATIONS---[\s\S]*?---END_?CITATIONS---/g, '');
+    text = text.replace(/[\n\r]+(?:#{1,6}\s*)?(?:\*{1,2})?CITATIONS(?:\*{1,2})?\s*$/i, '').trim();
+
     let html = text
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="chat-code"><code>$2</code></pre>')
@@ -278,9 +387,10 @@
       .replace(/^#{1}\s*(.+?)$/gm, '<h4 class="chat-h">$1</h4>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/(?<!^|\n)\*([^*\n]+)\*/g, '<em>$1</em>')
-      .replace(/\[(\d+)\]/g, '<button class="chat-cite" data-ref="$1" title="View source">[$1]</button>')
-      .replace(/\[(\d+(?:,\s*\d+)+)\]/g, (match, nums) =>
-        nums.split(',').map((n: string) => `<button class="chat-cite" data-ref="${n.trim()}" title="View source">[${n.trim()}]</button>`).join(''))
+      // Citation chips: [N] → superscript colored chip
+      .replace(/\[(\d+)\]/g, '<span class="cite-chip" data-ref="$1">$1</span>')
+      .replace(/\[(\d+(?:,\s*\d+)+)\]/g, (_match: string, nums: string) =>
+        nums.split(',').map((n: string) => `<span class="cite-chip" data-ref="${n.trim()}">${n.trim()}</span>`).join(''))
       .replace(/^[\*\-]\s+(.+)$/gm, '<li>$1</li>')
       .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
       .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul class="chat-list">$1</ul>')
@@ -302,7 +412,7 @@
 
 <div class="{fullscreen ? 'fixed inset-0 z-[9999]' : ''} flex flex-col"
   style="height: {fullscreen ? '100vh' : 'calc(100vh - 220px)'}; min-height: 400px;">
-  <!-- Top bar: workflow selector + controls -->
+  <!-- Top bar -->
   <div style="background-color: #002147;" class="flex items-center justify-between px-3 py-2 shrink-0">
     <div class="flex items-center gap-3">
       <select bind:value={selectedWorkflowId}
@@ -419,7 +529,39 @@
           </div>
         {/each}
 
-        {#if sending && !messages[messages.length - 1]?.content}
+        <!-- Activity Panel (Processing...) -->
+        {#if showActivityPanel}
+          <div class="activity-panel" class:collapsed={activityCollapsed}>
+            <div class="activity-header" on:click={() => activityCollapsed = !activityCollapsed}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+              <span>{activityCollapsed ? activityElapsedText || 'Processed' : 'Processing\u2026'}</span>
+            </div>
+            {#if !activityCollapsed}
+              <div class="activity-items">
+                {#each activityItems as item, idx}
+                  {@const detail = getActivityDetail(item)}
+                  <div class="activity-item"
+                    class:expandable={!!detail}
+                    class:expanded={expandedActivityIdx === idx}
+                    on:click={() => { if (detail) expandedActivityIdx = expandedActivityIdx === idx ? null : idx; }}>
+                    <span class="activity-item-icon">{ACTIVITY_ICONS[item.type] || '\u2022'}</span>
+                    <span class="activity-item-body">
+                      {@html getActivityDesc(item)}
+                      {#if detail && expandedActivityIdx === idx}
+                        <div class="activity-detail">{detail}</div>
+                      {/if}
+                    </span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Thinking indicator (only when no content yet and no activity panel) -->
+        {#if sending && !messages[messages.length - 1]?.content && !showActivityPanel}
           <div class="flex justify-start">
             <div class="bg-gray-50 border border-gray-200 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
               <div class="flex items-center gap-2">
@@ -428,7 +570,7 @@
                   <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
                   <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
                 </div>
-                <span class="text-xs text-gray-500">{streamingStatus || 'Processing...'}</span>
+                <span class="text-xs text-gray-500">Processing...</span>
               </div>
             </div>
           </div>
@@ -453,57 +595,137 @@
   </div>
 </div>
 
-<!-- Citation Modal -->
-{#if activeCitation}
-  <div class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30" on:click={() => activeCitation = null}>
-    <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden" on:click|stopPropagation>
-      <div style="background-color: #002147;" class="px-5 py-3 flex items-center justify-between">
-        <h3 style="color: white;" class="font-semibold text-sm flex items-center gap-2">
-          <span style="background: rgba(255,255,255,0.2); color: white;" class="rounded px-2 py-0.5 text-xs">[{activeCitation.ref}]</span>
-          {activeCitation.document_title || 'Document'}
-        </h3>
-        <button on:click={() => activeCitation = null} style="color: rgba(255,255,255,0.7);" class="hover:text-white text-lg">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="p-5 max-h-80 overflow-y-auto">
-        {#if activeCitation.quoted_text}
-          <div class="mb-3">
-            <div class="text-xs font-medium text-gray-500 uppercase mb-1">Quoted Passage</div>
-            <blockquote class="text-sm text-gray-700 border-l-4 border-blue-400 pl-3 italic bg-blue-50 rounded-r-lg p-3">
-              "{activeCitation.quoted_text}"
-            </blockquote>
-          </div>
-        {/if}
-        {#if activeCitation.page || activeCitation.section}
-          <div class="flex gap-4 text-xs text-gray-500">
-            {#if activeCitation.page}<span><i class="fas fa-file-alt mr-1"></i> Page {activeCitation.page}</span>{/if}
-            {#if activeCitation.section}<span><i class="fas fa-bookmark mr-1"></i> {activeCitation.section}</span>{/if}
-          </div>
-        {/if}
-      </div>
+<!-- Citation Tooltip -->
+{#if tooltipCitation && tooltipPosition}
+  <div class="cite-tooltip"
+    style="left: {tooltipPosition.left}px; top: {tooltipPosition.top}px;"
+    on:click|stopPropagation>
+    <div class="cite-tooltip-title">
+      {#if tooltipCitation.document_id}
+        <a class="cite-tooltip-link" href="#"
+          on:click|preventDefault={() => openCitationDocument(tooltipCitation?.document_id)}>
+          {tooltipCitation.document_title || 'Document'}
+          {#if tooltipCitation.page || tooltipCitation.section}
+            &mdash; {tooltipCitation.page ? `p.${tooltipCitation.page}` : ''}{tooltipCitation.section ? `, ${tooltipCitation.section}` : ''}
+          {/if}
+        </a>
+      {:else if tooltipCitation.url}
+        <a class="cite-tooltip-link" href={tooltipCitation.url} target="_blank" rel="noopener">
+          {tooltipCitation.document_title || tooltipCitation.url}
+        </a>
+      {:else}
+        {tooltipCitation.document_title || 'Source'}
+      {/if}
     </div>
+    {#if tooltipCitation.quoted_text}
+      <div class="cite-tooltip-quote">
+        &ldquo;{tooltipCitation.quoted_text.slice(0, 300)}&rdquo;
+      </div>
+    {/if}
   </div>
 {/if}
 
 <style>
+  /* ── Markdown ───────────────────────────────────────────── */
   :global(.chat-markdown h4.chat-h) { font-size: 0.95rem; font-weight: 700; margin: 0.6rem 0 0.3rem; color: #1e293b; }
   :global(.chat-markdown ul.chat-list) { list-style: disc; padding-left: 1.25rem; margin: 0.3rem 0; }
   :global(.chat-markdown ul.chat-list li) { margin-bottom: 0.2rem; }
   :global(.chat-markdown strong) { font-weight: 600; color: #0f172a; }
-  :global(.chat-markdown .chat-cite) {
-    display: inline-block; font-size: 0.65rem; font-weight: 600; color: #2563eb;
-    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px;
-    padding: 0 4px; margin: 0 1px; vertical-align: super; line-height: 1;
-    cursor: pointer; transition: all 0.15s;
-  }
-  :global(.chat-markdown .chat-cite:hover) {
-    background: #dbeafe; border-color: #93c5fd; transform: scale(1.1);
-    box-shadow: 0 1px 3px rgba(37,99,235,0.2);
-  }
   :global(.chat-markdown pre.chat-code) {
     background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px;
     padding: 0.5rem 0.75rem; overflow-x: auto; font-size: 0.8rem; margin: 0.4rem 0;
   }
   :global(.chat-markdown code.chat-inline-code) { background: #f1f5f9; border-radius: 3px; padding: 1px 4px; font-size: 0.85em; }
+
+  /* ── Citation Chips ─────────────────────────────────────── */
+  :global(.cite-chip) {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 4px;
+    border-radius: 4px; background: #0ea5e9; color: white;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    vertical-align: super; margin: 0 1px; line-height: 1;
+    transition: filter 0.15s;
+  }
+  :global(.cite-chip:hover) { filter: brightness(0.85); }
+  :global(.cite-chip-secondary) { background: #e5e7eb; color: #374151; cursor: default; }
+  :global(.cite-chip-secondary:hover) { filter: none; }
+
+  /* ── Citation Tooltip ───────────────────────────────────── */
+  .cite-tooltip {
+    position: fixed; max-width: 340px;
+    background: #1e293b; color: #e2e8f0;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    z-index: 10001; animation: citeIn 0.15s ease-out;
+  }
+  .cite-tooltip-title { font-weight: 600; color: #38bdf8; margin-bottom: 6px; font-size: 12px; }
+  .cite-tooltip-link {
+    color: #38bdf8; text-decoration: underline; text-underline-offset: 2px;
+    cursor: pointer; transition: color 0.15s;
+  }
+  .cite-tooltip-link:hover { color: #7dd3fc; }
+  .cite-tooltip-quote {
+    font-style: italic; color: #cbd5e1; font-size: 12px; line-height: 1.5;
+  }
+  @keyframes citeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Activity Panel ─────────────────────────────────────── */
+  .activity-panel {
+    background: #f1f5f9; border: 1px solid #e2e8f0;
+    border-radius: 12px; margin: 4px 0;
+    overflow: hidden; transition: max-height 0.35s ease, opacity 0.25s ease;
+    max-height: 320px; opacity: 1;
+  }
+  .activity-panel.collapsed { max-height: 32px; cursor: pointer; }
+  .activity-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; font-size: 12px; font-weight: 600;
+    color: #64748b; user-select: none; cursor: pointer;
+  }
+  .activity-header svg {
+    width: 14px; height: 14px; flex-shrink: 0;
+    transition: transform 0.25s;
+  }
+  .activity-panel.collapsed .activity-header svg { transform: rotate(-90deg); }
+  .activity-items { max-height: 260px; overflow-y: auto; padding: 0 12px 8px; }
+  .activity-panel.collapsed .activity-items { display: none; }
+  .activity-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 5px 0; font-size: 12px; color: #475569;
+    line-height: 1.45; border-bottom: 1px solid #e2e8f0;
+    animation: actItemIn 0.2s ease-out;
+  }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-item-icon {
+    flex-shrink: 0; width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px; font-size: 11px;
+  }
+  :global(.activity-item-body b) { color: #334155; }
+  .activity-item.expandable { cursor: pointer; flex-wrap: wrap; }
+  .activity-item.expandable:hover { background: #e2e8f0; border-radius: 6px; }
+  :global(.activity-item.expandable .activity-item-body::after) {
+    content: ' \25B8'; font-size: 10px; color: #94a3b8; transition: transform 0.2s;
+  }
+  :global(.activity-item.expanded .activity-item-body::after) { content: ' \25BE'; }
+  .activity-detail {
+    width: 100%; margin-top: 4px; padding: 8px 10px;
+    background: #e8ecf1; border-radius: 6px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 11px; line-height: 1.55; color: #334155;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 180px; overflow-y: auto;
+    animation: detailSlide 0.2s ease-out;
+  }
+  @keyframes actItemIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes detailSlide {
+    from { opacity: 0; max-height: 0; }
+    to { opacity: 1; max-height: 180px; }
+  }
 </style>
