@@ -1,6 +1,6 @@
 {
   "name": "aicc-intellidoc",
-  "version": "1.3.3",
+  "version": "1.0.0",
   "description": "AICC IntelliDoc - AI Document Analysis Desktop App",
   "main": "src/main.js",
   "author": {
