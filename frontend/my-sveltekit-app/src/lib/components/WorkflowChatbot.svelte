@@ -546,7 +546,7 @@
 
         {#each messages as msg, msgIdx}
           <!-- Activity Panel: show BEFORE the last assistant message (streaming placeholder) -->
-          {#if showActivityPanel && msg.role === 'assistant' && msgIdx === messages.length - 1 && sending}
+          {#if showActivityPanel && msg.role === 'assistant' && msgIdx === messages.length - 1}
             <div class="activity-panel" class:collapsed={activityCollapsed}>
               <div class="activity-header" on:click={() => activityCollapsed = !activityCollapsed}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -599,37 +599,6 @@
             </div>
           </div>
         {/each}
-
-        <!-- Activity Panel: show after messages when done (collapsed state for history) -->
-        {#if showActivityPanel && !sending}
-          <div class="activity-panel" class:collapsed={activityCollapsed}>
-            <div class="activity-header" on:click={() => activityCollapsed = !activityCollapsed}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-              <span>{activityCollapsed ? activityElapsedText || 'Processed' : 'Processing\u2026'}</span>
-            </div>
-            {#if !activityCollapsed}
-              <div class="activity-items">
-                {#each activityItems as item, idx}
-                  {@const detail = getActivityDetail(item)}
-                  <div class="activity-item"
-                    class:expandable={!!detail}
-                    class:expanded={expandedActivityIdx === idx}
-                    on:click={() => { if (detail) expandedActivityIdx = expandedActivityIdx === idx ? null : idx; }}>
-                    <span class="activity-item-icon">{ACTIVITY_ICONS[item.type] || '\u2022'}</span>
-                    <span class="activity-item-body">
-                      {@html getActivityDesc(item)}
-                      {#if detail && expandedActivityIdx === idx}
-                        <div class="activity-detail">{detail}</div>
-                      {/if}
-                    </span>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/if}
 
         <!-- Thinking indicator (only when no content yet and no activity panel) -->
         {#if sending && !messages[messages.length - 1]?.content && !showActivityPanel}
