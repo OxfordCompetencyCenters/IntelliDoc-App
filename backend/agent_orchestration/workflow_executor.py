@@ -2251,19 +2251,6 @@ class WorkflowExecutor:
 
                 # ── Citation normalization (same logic as explicit synthesis) ──
                 import re as _re
-                _raw_cit_map: Dict[int, Dict[str, Any]] = {}
-                for _c in raw_citations:
-                    _r = _c.get("ref")
-                    if _r is not None:
-                        _raw_cit_map[int(_r)] = _c
-
-                _seen: set = set()
-                _ordered_refs: List[int] = []
-                for _m in _re.finditer(r'\[(\d+)\]', clean_text):
-                    _n = int(_m.group(1))
-                    if _n not in _seen:
-                        _seen.add(_n)
-                        _ordered_refs.append(_n)
 
                 # Info tool names that should NOT be used as citation sources
                 from .document_tool_service import (
@@ -2276,6 +2263,73 @@ class WorkflowExecutor:
                     GET_SUMMARIES_TOOL_NAME, FIND_RELEVANT_TOOL_NAME,
                     GET_METADATA_TOOL_NAME,
                 }
+
+                _raw_cit_map: Dict[int, Dict[str, Any]] = {}
+                for _c in raw_citations:
+                    _r = _c.get("ref")
+                    if _r is not None:
+                        _raw_cit_map[int(_r)] = _c
+
+                # ── Convert filename-based refs [name.pdf] to numbered [N] ──
+                # Build reverse map: filename/title → tool_name for lookup
+                _filename_to_tool: Dict[str, str] = {}
+                for _tn, _tt in title_map.items():
+                    if _tn not in _info_tool_names:
+                        _filename_to_tool[_tt.lower()] = _tn
+                        # Also map without extension
+                        _base = _tt.rsplit('.', 1)[0] if '.' in _tt else _tt
+                        _filename_to_tool[_base.lower()] = _tn
+
+                _filename_cit_counter = max((_c.get("ref", 0) for _c in raw_citations), default=0) + 1
+                _filename_ref_map: Dict[str, int] = {}  # filename → assigned ref number
+
+                def _replace_filename_ref(_match_obj):
+                    nonlocal _filename_cit_counter
+                    _ref_text = _match_obj.group(1)
+                    # Skip if it's already a number (handled below)
+                    if _ref_text.isdigit():
+                        return _match_obj.group(0)
+                    _key = _ref_text.lower().strip()
+                    _matched_tool = _filename_to_tool.get(_key)
+                    if not _matched_tool:
+                        # Try without extension
+                        _base_key = _key.rsplit('.', 1)[0] if '.' in _key else _key
+                        _matched_tool = _filename_to_tool.get(_base_key)
+                    if not _matched_tool:
+                        return _match_obj.group(0)  # Not a known filename
+                    if _key not in _filename_ref_map:
+                        _filename_ref_map[_key] = _filename_cit_counter
+                        # Add to raw_citations
+                        raw_citations.append({
+                            "ref": _filename_cit_counter,
+                            "document_title": title_map.get(_matched_tool, _ref_text),
+                            "quoted_text": f"Reference from {title_map.get(_matched_tool, _ref_text)}",
+                            "document_id": tool_map.get(_matched_tool),
+                            "source": "document",
+                        })
+                        _filename_cit_counter += 1
+                    return f"[{_filename_ref_map[_key]}]"
+
+                # Replace [filename.pdf] and [filename] patterns with [N]
+                clean_text = _re.sub(r'\[([^\[\]]{3,80})\]', _replace_filename_ref, clean_text)
+
+                if _filename_ref_map:
+                    logger.info(
+                        f"📎 FILENAME→NUM: Converted {len(_filename_ref_map)} filename refs to numbered citations"
+                    )
+                    # Rebuild raw_cit_map with new entries
+                    for _c in raw_citations:
+                        _r = _c.get("ref")
+                        if _r is not None:
+                            _raw_cit_map[int(_r)] = _c
+
+                _seen: set = set()
+                _ordered_refs: List[int] = []
+                for _m in _re.finditer(r'\[(\d+)\]', clean_text):
+                    _n = int(_m.group(1))
+                    if _n not in _seen:
+                        _seen.add(_n)
+                        _ordered_refs.append(_n)
 
                 def _find_cit_nb(_ref_num: int) -> Dict[str, Any]:
                     # Only search document-read entries, skip info tools
