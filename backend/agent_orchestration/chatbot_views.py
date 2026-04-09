@@ -500,7 +500,7 @@ def chatbot_send_message_stream(request, project_id, session_id):
                 # Parse and strip ---CITATIONS--- block from response before streaming
                 import re as _re
                 _cit_match = _re.search(
-                    r'---CITATIONS---\s*([\s\S]*?)\s*---END_?CITATIONS---',
+                    r'---\s*CITATIONS\s*---\s*([\s\S]*?)\s*---\s*END_?CITATIONS\s*---',
                     assistant_response,
                 )
                 parsed_cit_json = None
@@ -510,20 +510,40 @@ def chatbot_send_message_stream(request, project_id, session_id):
                     except (json.JSONDecodeError, ValueError):
                         pass
                     assistant_response = assistant_response[:_cit_match.start()].rstrip()
+                # Also catch blocks without END marker (LLM just dumps JSON after ---CITATIONS---)
+                _cit_match2 = _re.search(
+                    r'---\s*CITATIONS\s*---\s*\[[\s\S]*$',
+                    assistant_response,
+                )
+                if _cit_match2 and not _cit_match:
+                    try:
+                        _json_text = assistant_response[_cit_match2.start():]
+                        _json_text = _re.sub(r'^---\s*CITATIONS\s*---\s*', '', _json_text).strip()
+                        parsed_cit_json = json.loads(_json_text)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    assistant_response = assistant_response[:_cit_match2.start()].rstrip()
                 # Strip trailing "CITATIONS" header some models leave
-                assistant_response = _re.sub(r'\n*CITATIONS\s*$', '', assistant_response).rstrip()
+                assistant_response = _re.sub(r'\n+[-*#\s]*CITATIONS[-*#\s]*\s*$', '', assistant_response).rstrip()
+                # Strip trailing --- separators
+                assistant_response = _re.sub(r'\n+---+\s*$', '', assistant_response).rstrip()
 
                 # Merge parsed citations with extracted ones
                 if not citations_list and parsed_cit_json and isinstance(parsed_cit_json, list):
                     citations_list = parsed_cit_json
 
-                # Stream response word-by-word (if not already streamed by Ollama)
+                # Stream response in chunks (if not already streamed by Ollama)
                 if not streamed_any_chunk and assistant_response:
+                    # Send in ~5-word chunks for fast but smooth streaming
                     words = assistant_response.split(' ')
-                    for i, word in enumerate(words):
-                        content = word + (' ' if i < len(words) - 1 else '')
+                    chunk_size = 5
+                    for i in range(0, len(words), chunk_size):
+                        chunk_words = words[i:i + chunk_size]
+                        content = ' '.join(chunk_words)
+                        if i + chunk_size < len(words):
+                            content += ' '
                         yield _sse_event('content', {'content': content})
-                        time.sleep(0.02)  # 20ms for smooth streaming
+                        time.sleep(0.03)  # 30ms per 5-word chunk
 
                 # Send citations as separate event
                 if citations_list:

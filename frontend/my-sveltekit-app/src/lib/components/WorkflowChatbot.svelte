@@ -374,9 +374,13 @@
 
   function renderMarkdown(text: string): string {
     if (!text) return '';
-    // Safety: strip ---CITATIONS--- block if backend missed it
-    text = text.replace(/---CITATIONS---[\s\S]*?---END_?CITATIONS---/g, '');
-    text = text.replace(/[\n\r]+(?:#{1,6}\s*)?(?:\*{1,2})?CITATIONS(?:\*{1,2})?\s*$/i, '').trim();
+    // Safety: strip ---CITATIONS--- block and all citation JSON that follows
+    text = text.replace(/---\s*CITATIONS\s*---[\s\S]*?---\s*END_?CITATIONS\s*---/g, '');
+    // Strip ---CITATIONS--- without END marker (catches partial blocks during streaming)
+    text = text.replace(/---\s*CITATIONS\s*---\s*\[[\s\S]*$/g, '');
+    // Strip trailing CITATIONS header and --- separators
+    text = text.replace(/[\n\r]+[-*#\s]*CITATIONS[-*#\s]*\s*$/i, '');
+    text = text.replace(/\n---+\s*$/g, '').trim();
 
     let html = text
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
