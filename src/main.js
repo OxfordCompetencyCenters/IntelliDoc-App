@@ -1019,11 +1019,19 @@ app.whenReady().then(async () => {
 
     const s = await getStore();
 
-    // Clear web caches on version change to prevent stale JS/CSS after updates
-    const currentVersion = app.getVersion();
-    const lastVersion = s.get('lastAppVersion');
-    if (lastVersion && lastVersion !== currentVersion) {
-      console.log(`Version changed: ${lastVersion} → ${currentVersion} — clearing web caches`);
+    // Clear web caches when the app bundle changes (prevents stale JS/CSS)
+    // Use the asar file's mtime as a build fingerprint — changes on every rebuild
+    const asarPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar')
+      : __filename;
+    let buildFingerprint = app.getVersion();
+    try {
+      const stat = fs.statSync(asarPath);
+      buildFingerprint = `${app.getVersion()}_${stat.mtimeMs}`;
+    } catch {}
+    const lastFingerprint = s.get('lastBuildFingerprint');
+    if (lastFingerprint && lastFingerprint !== buildFingerprint) {
+      console.log(`Build changed — clearing web caches`);
       const userDataPath = app.getPath('userData');
       const cacheDirs = ['Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache'];
       for (const dir of cacheDirs) {
@@ -1038,7 +1046,7 @@ app.whenReady().then(async () => {
         }
       }
     }
-    s.set('lastAppVersion', currentVersion);
+    s.set('lastBuildFingerprint', buildFingerprint);
 
     // Use a random available port — eliminates all port conflicts
     const djangoPort = await getRandomPort();
