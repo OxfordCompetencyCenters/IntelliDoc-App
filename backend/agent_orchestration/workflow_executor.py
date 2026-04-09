@@ -76,11 +76,27 @@ class WorkflowExecutor:
         self.human_input_handler = human_input_handler
         self.reflection_handler = reflection_handler
     
-    async def execute_workflow(self, workflow: AgentWorkflow, executed_by, deployment_context: Optional[Dict[str, Any]] = None, event_callback=None) -> Dict[str, Any]:
+    @staticmethod
+    def _is_last_agent_before_end(node_id, execution_sequence):
+        """Check if this node is the last agent before EndNode in execution order."""
+        for i, node in enumerate(execution_sequence):
+            if node.get('id') == node_id:
+                # Check if the next node is EndNode
+                if i + 1 < len(execution_sequence):
+                    next_node = execution_sequence[i + 1]
+                    return next_node.get('type') == 'EndNode'
+                # Last node in sequence
+                return True
+        return False
+
+    async def execute_workflow(self, workflow: AgentWorkflow, executed_by, deployment_context: Optional[Dict[str, Any]] = None, event_callback=None, stream_callback=None) -> Dict[str, Any]:
         """
         Execute the complete workflow with REAL LLM calls and conversation chaining
         Returns execution results as dictionary instead of database records
-        
+
+        Args:
+            stream_callback: Optional async callable(chunk: str) for streaming final agent output
+
         Args:
             workflow: The AgentWorkflow instance to execute
             executed_by: User who initiated the execution
@@ -731,14 +747,38 @@ class WorkflowExecutor:
                                 )
                             else:
                                 # Standard single LLM call (existing path)
-                                agent_response = await llm_provider.generate_response(
-                                    messages=llm_messages
+                                # Check if we should stream this response
+                                _should_stream = (
+                                    stream_callback
+                                    and hasattr(llm_provider, 'generate_response_stream')
+                                    and self._is_last_agent_before_end(node_id, execution_sequence)
                                 )
-                            
-                                if agent_response.error:
-                                    raise Exception(f"Agent {node_name} error: {agent_response.error}")
-                            
-                                agent_response_text = agent_response.text.strip()
+                                if _should_stream:
+                                    # Stream the response token-by-token
+                                    import time as _time
+                                    _stream_start = _time.time()
+                                    _chunks = []
+                                    async for chunk in llm_provider.generate_response_stream(messages=llm_messages):
+                                        _chunks.append(chunk)
+                                        await stream_callback(chunk)
+                                    _full_text = ''.join(_chunks)
+                                    from llm_eval.providers.base import LLMResponse
+                                    agent_response = LLMResponse(
+                                        text=_full_text,
+                                        model=agent_config.get('llm_model', 'unknown'),
+                                        provider=agent_config.get('llm_provider', 'unknown'),
+                                        response_time_ms=int((_time.time() - _stream_start) * 1000),
+                                    )
+                                    agent_response_text = _full_text.strip()
+                                else:
+                                    agent_response = await llm_provider.generate_response(
+                                        messages=llm_messages
+                                    )
+
+                                    if agent_response.error:
+                                        raise Exception(f"Agent {node_name} error: {agent_response.error}")
+
+                                    agent_response_text = agent_response.text.strip()
                             
                                 if not agent_response_text:
                                     provider_error = getattr(agent_response, "error", None)
@@ -2225,8 +2265,22 @@ class WorkflowExecutor:
                         _seen.add(_n)
                         _ordered_refs.append(_n)
 
+                # Info tool names that should NOT be used as citation sources
+                from .document_tool_service import (
+                    LIST_FILES_TOOL_NAME, COUNT_FILES_TOOL_NAME,
+                    GET_SUMMARIES_TOOL_NAME, FIND_RELEVANT_TOOL_NAME,
+                    GET_METADATA_TOOL_NAME,
+                )
+                _info_tool_names = {
+                    LIST_FILES_TOOL_NAME, COUNT_FILES_TOOL_NAME,
+                    GET_SUMMARIES_TOOL_NAME, FIND_RELEVANT_TOOL_NAME,
+                    GET_METADATA_TOOL_NAME,
+                }
+
                 def _find_cit_nb(_ref_num: int) -> Dict[str, Any]:
-                    for _entry in notebook:
+                    # Only search document-read entries, skip info tools
+                    _doc_entries = [e for e in notebook if e.get("tool_name") not in _info_tool_names]
+                    for _entry in _doc_entries:
                         _rt = _entry.get("result", "")
                         _match = _re.search(rf'\[{_ref_num}\]\s*"([^"]+)"', _rt)
                         if _match:
@@ -2244,8 +2298,9 @@ class WorkflowExecutor:
                                 "document_id": tool_map.get(_entry["tool_name"]),
                                 "source": "document",
                             }
-                    if notebook:
-                        _e = notebook[0]
+                    # Fallback: use first document-read entry (not info tools)
+                    if _doc_entries:
+                        _e = _doc_entries[0]
                         return {
                             "document_title": title_map.get(_e["tool_name"], _e["tool_name"]),
                             "quoted_text": f"Reference from {title_map.get(_e['tool_name'], _e['tool_name'])}",

@@ -87,20 +87,21 @@ class ConversationOrchestrator:
     # MAIN API METHODS - Primary interfaces used by the application
     # ============================================================================
     
-    async def execute_workflow(self, workflow: AgentWorkflow, executed_by, deployment_context: Optional[Dict[str, Any]] = None, event_callback=None) -> Dict[str, Any]:
+    async def execute_workflow(self, workflow: AgentWorkflow, executed_by, deployment_context: Optional[Dict[str, Any]] = None, event_callback=None, stream_callback=None) -> Dict[str, Any]:
         """
         Execute the complete workflow with REAL LLM calls and conversation chaining
-        
+
         Args:
             workflow: The AgentWorkflow instance to execute
             executed_by: User who initiated the execution
             deployment_context: Optional deployment context with user query for UserProxyAgent handling
             event_callback: Optional callback for streaming intermediate events
-            
+            stream_callback: Optional async callable(chunk: str) for streaming final agent output
+
         Returns:
             Dict containing execution results, conversation history, and metadata
         """
-        return await self.workflow_executor.execute_workflow(workflow, executed_by, deployment_context=deployment_context, event_callback=event_callback)
+        return await self.workflow_executor.execute_workflow(workflow, executed_by, deployment_context=deployment_context, event_callback=event_callback, stream_callback=stream_callback)
     
     async def resume_workflow_with_human_input(self, execution_id: str, human_input: str, user):
         """

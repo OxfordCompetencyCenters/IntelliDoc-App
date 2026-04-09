@@ -125,40 +125,120 @@
     renamingId = null;
   }
 
+  let streamingStatus = '';
+
   async function sendMessage() {
     if (!messageInput.trim() || !activeSessionId || sending) return;
     const text = messageInput.trim();
     messageInput = '';
     sending = true;
+    streamingStatus = '';
     messages = [...messages, { role: 'user', content: text, timestamp: new Date().toISOString() }];
     scrollToBottom();
+
+    // Add a placeholder assistant message for streaming
+    const assistantIdx = messages.length;
+    messages = [...messages, { role: 'assistant', content: '', timestamp: new Date().toISOString() }];
+    scrollToBottom();
+
     try {
-      const resp = await fetch(`${API}/sessions/${activeSessionId}/send/`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const resp = await fetch(`${API}/sessions/${activeSessionId}/send_stream/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
       });
-      const data = await resp.json();
-      if (data.error) {
-        messages = [...messages, { role: 'assistant', content: `Error: ${data.error}`, timestamp: new Date().toISOString() }];
-      } else {
-        messages = [...messages, { role: 'assistant', content: data.response || 'No response',
-          timestamp: new Date().toISOString(), elapsed_ms: data.elapsed_ms, citations: data.citations || [] }];
-      }
-      // Update session — use first message as label (instead of "Chat N")
-      sessions = sessions.map(s => {
-        if (s.id !== activeSessionId) return s;
-        const isFirstMessage = s.message_count === 0 || s.label.startsWith('Chat ');
-        return {
-          ...s,
-          label: isFirstMessage ? text.slice(0, 50) : s.label,
-          preview: '',
-          message_count: data.message_count || s.message_count + 1,
-          updated_at: new Date().toISOString(),
+
+      if (!resp.ok || !resp.body) {
+        // Fallback to non-streaming
+        const data = await resp.json();
+        messages[assistantIdx] = {
+          ...messages[assistantIdx],
+          content: data.error ? `Error: ${data.error}` : (data.response || 'No response'),
+          elapsed_ms: data.elapsed_ms,
+          citations: data.citations || [],
         };
-      });
+        messages = [...messages];
+        return;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamedContent = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE format: "event: type\ndata: json\n\n"
+        // Process complete events (separated by double newline)
+        while (buffer.includes('\n\n')) {
+          const eventEnd = buffer.indexOf('\n\n');
+          const eventBlock = buffer.slice(0, eventEnd);
+          buffer = buffer.slice(eventEnd + 2);
+
+          let eventType = '';
+          let eventData = '';
+          for (const line of eventBlock.split('\n')) {
+            if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+            else if (line.startsWith('data: ')) eventData = line.slice(6);
+          }
+          if (!eventData) continue;
+
+          try {
+            const data = JSON.parse(eventData);
+
+            if (eventType === 'chunk') {
+              streamedContent += data.content || '';
+              messages[assistantIdx] = { ...messages[assistantIdx], content: streamedContent };
+              messages = [...messages];
+              scrollToBottom();
+            } else if (eventType === 'status') {
+              const phase = data.phase || '';
+              if (phase === 'planning') streamingStatus = 'Planning...';
+              else if (phase === 'tool_result') streamingStatus = 'Analyzing documents...';
+              else if (phase === 'synthesizing') streamingStatus = 'Generating response...';
+              else streamingStatus = phase;
+            } else if (eventType === 'done') {
+              streamingStatus = '';
+              messages[assistantIdx] = {
+                ...messages[assistantIdx],
+                content: data.response || streamedContent,
+                elapsed_ms: data.elapsed_ms,
+                citations: data.citations || [],
+              };
+              messages = [...messages];
+              sessions = sessions.map(s => {
+                if (s.id !== activeSessionId) return s;
+                const isFirstMessage = s.message_count === 0 || s.label.startsWith('Chat ');
+                return {
+                  ...s,
+                  label: isFirstMessage ? text.slice(0, 50) : s.label,
+                  preview: '',
+                  message_count: data.message_count || s.message_count + 1,
+                  updated_at: new Date().toISOString(),
+                };
+              });
+            } else if (eventType === 'error') {
+              streamingStatus = '';
+              messages[assistantIdx] = { ...messages[assistantIdx], content: `Error: ${data.error}` };
+              messages = [...messages];
+            }
+          } catch { /* skip malformed JSON */ }
+        }
+      }
     } catch (err: any) {
-      messages = [...messages, { role: 'assistant', content: `Error: ${err.message}`, timestamp: new Date().toISOString() }];
-    } finally { sending = false; scrollToBottom(); }
+      messages[assistantIdx] = {
+        ...messages[assistantIdx],
+        content: `Error: ${err.message}`,
+      };
+      messages = [...messages];
+    } finally {
+      sending = false;
+      streamingStatus = '';
+      scrollToBottom();
+    }
   }
 
   function scrollToBottom() {
@@ -339,7 +419,7 @@
           </div>
         {/each}
 
-        {#if sending}
+        {#if sending && !messages[messages.length - 1]?.content}
           <div class="flex justify-start">
             <div class="bg-gray-50 border border-gray-200 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
               <div class="flex items-center gap-2">
@@ -348,7 +428,7 @@
                   <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
                   <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
                 </div>
-                <span class="text-xs text-gray-500">Processing...</span>
+                <span class="text-xs text-gray-500">{streamingStatus || 'Processing...'}</span>
               </div>
             </div>
           </div>

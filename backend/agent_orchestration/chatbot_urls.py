@@ -8,4 +8,5 @@ urlpatterns = [
     path('<uuid:project_id>/sessions/<uuid:session_id>/rename/', chatbot_views.chatbot_rename_session, name='chatbot-rename-session'),
     path('<uuid:project_id>/sessions/<uuid:session_id>/messages/', chatbot_views.chatbot_messages, name='chatbot-messages'),
     path('<uuid:project_id>/sessions/<uuid:session_id>/send/', chatbot_views.chatbot_send_message, name='chatbot-send-message'),
+    path('<uuid:project_id>/sessions/<uuid:session_id>/send_stream/', chatbot_views.chatbot_send_message_stream, name='chatbot-send-message-stream'),
 ]
