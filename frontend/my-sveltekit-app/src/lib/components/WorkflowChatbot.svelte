@@ -694,34 +694,36 @@
 
   /* ── Citation Chips ─────────────────────────────────────── */
   :global(.cite-chip) {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 18px; height: 18px; padding: 0 5px;
-    border-radius: 9px; background: #2563eb; color: white;
-    font-size: 10px; font-weight: 700; cursor: pointer;
-    vertical-align: super; margin: 0 2px; line-height: 1;
-    transition: all 0.15s; box-shadow: 0 1px 2px rgba(37,99,235,0.3);
-    text-decoration: none;
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    min-width: 18px !important; height: 18px !important; padding: 0 5px !important;
+    border-radius: 9px !important; background: #2563eb !important; color: #ffffff !important;
+    font-size: 10px !important; font-weight: 700 !important; cursor: pointer !important;
+    vertical-align: super !important; margin: 0 2px !important; line-height: 1 !important;
+    transition: all 0.15s !important; box-shadow: 0 1px 2px rgba(37,99,235,0.3) !important;
+    text-decoration: none !important; -webkit-text-fill-color: #ffffff !important;
   }
-  :global(.cite-chip:hover) { background: #1d4ed8; transform: scale(1.12); box-shadow: 0 2px 6px rgba(37,99,235,0.4); }
+  :global(.cite-chip:hover) { background: #1d4ed8 !important; transform: scale(1.12); box-shadow: 0 2px 6px rgba(37,99,235,0.4) !important; }
   :global(.cite-chip-secondary) { background: #e5e7eb; color: #374151; cursor: default; }
   :global(.cite-chip-secondary:hover) { filter: none; }
 
   /* ── Citation Tooltip ───────────────────────────────────── */
   .cite-tooltip {
-    position: fixed; max-width: 340px;
-    background: #1e293b; color: #e2e8f0;
-    border-radius: 8px; padding: 10px 14px;
-    font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    position: fixed; max-width: 360px;
+    background: #1e293b !important; color: #e2e8f0 !important;
+    border-radius: 10px; padding: 12px 16px;
+    font-size: 13px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
     z-index: 10001; animation: citeIn 0.15s ease-out;
+    border: 1px solid rgba(255,255,255,0.1);
   }
-  .cite-tooltip-title { font-weight: 600; color: #38bdf8; margin-bottom: 6px; font-size: 12px; }
+  .cite-tooltip-title { font-weight: 600; color: #7dd3fc !important; margin-bottom: 8px; font-size: 13px; }
   .cite-tooltip-link {
-    color: #38bdf8; text-decoration: underline; text-underline-offset: 2px;
+    color: #7dd3fc !important; text-decoration: underline; text-underline-offset: 2px;
     cursor: pointer; transition: color 0.15s;
   }
-  .cite-tooltip-link:hover { color: #7dd3fc; }
+  .cite-tooltip-link:hover { color: #bae6fd !important; }
   .cite-tooltip-quote {
-    font-style: italic; color: #cbd5e1; font-size: 12px; line-height: 1.5;
+    font-style: italic; color: #cbd5e1 !important; font-size: 12px; line-height: 1.5;
+    -webkit-text-fill-color: #cbd5e1 !important;
   }
   @keyframes citeIn {
     from { opacity: 0; transform: translateY(-4px); }
