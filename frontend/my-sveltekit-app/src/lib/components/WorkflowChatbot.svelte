@@ -451,7 +451,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="{fullscreen ? 'fixed inset-0 z-[9999]' : ''} flex flex-col"
-  style="height: {fullscreen ? '100vh' : 'calc(100vh - 220px)'}; min-height: 400px;">
+  style="height: {fullscreen ? '100vh' : 'calc(100vh - 260px)'}; min-height: 400px;">
   <!-- Top bar -->
   <div style="background-color: #002147;" class="flex items-center justify-between px-3 py-2 shrink-0">
     <div class="flex items-center gap-3">
@@ -544,7 +544,38 @@
           </div>
         {/if}
 
-        {#each messages as msg}
+        {#each messages as msg, msgIdx}
+          <!-- Activity Panel: show BEFORE the last assistant message (streaming placeholder) -->
+          {#if showActivityPanel && msg.role === 'assistant' && msgIdx === messages.length - 1 && sending}
+            <div class="activity-panel" class:collapsed={activityCollapsed}>
+              <div class="activity-header" on:click={() => activityCollapsed = !activityCollapsed}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+                <span>{activityCollapsed ? activityElapsedText || 'Processed' : 'Processing\u2026'}</span>
+              </div>
+              {#if !activityCollapsed}
+                <div class="activity-items">
+                  {#each activityItems as item, idx}
+                    {@const detail = getActivityDetail(item)}
+                    <div class="activity-item"
+                      class:expandable={!!detail}
+                      class:expanded={expandedActivityIdx === idx}
+                      on:click={() => { if (detail) expandedActivityIdx = expandedActivityIdx === idx ? null : idx; }}>
+                      <span class="activity-item-icon">{ACTIVITY_ICONS[item.type] || '\u2022'}</span>
+                      <span class="activity-item-body">
+                        {@html getActivityDesc(item)}
+                        {#if detail && expandedActivityIdx === idx}
+                          <div class="activity-detail">{detail}</div>
+                        {/if}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
           <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}">
             <div class="max-w-[75%] {msg.role === 'user'
               ? 'rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm'
@@ -569,8 +600,8 @@
           </div>
         {/each}
 
-        <!-- Activity Panel (Processing...) -->
-        {#if showActivityPanel}
+        <!-- Activity Panel: show after messages when done (collapsed state for history) -->
+        {#if showActivityPanel && !sending}
           <div class="activity-panel" class:collapsed={activityCollapsed}>
             <div class="activity-header" on:click={() => activityCollapsed = !activityCollapsed}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
